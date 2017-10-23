@@ -399,6 +399,97 @@ end subroutine add_sensible_heat
 
 
 
+!---------------------------------------------------------------------------------
+!
+! function: Average over a certain layer Non-linearly
+!           Follows equation from Rogers and Yao textbook on Cloud Physics
+!
+!---------------------------------------------------------------------------------
+subroutine middle_layer_avg (scalar, pressure, nlev, missing, middle )
+
+      integer, intent(in )  ::  nlev
+      real(4), intent(in )  ::  scalar(nlev), pressure(nlev)
+      real(4), intent(in )  ::  missing
+      real(4), intent(out)  ::  middle(nlev)
+
+      integer :: nlev1
+
+      !-------------------------------------------------------------------
+      !--- Calculate layer averages (mid-point)
+      !-------------------------------------------------------------------
+      nlev1  = nlev - 1
+      middle = missing
+      where( scalar  (2:nlev).ne.missing  .and.  scalar  (:nlev1).ne.missing  .and.  &
+             pressure(2:nlev).ne.missing  .and.  pressure(:nlev1).ne.missing         )
+
+         middle(:nlev1)  =  ( (scalar  (2:nlev)*log(pressure(2:nlev))  +  scalar(:nlev1)*log(pressure(:nlev1)))  /  &
+                           log(pressure(2:nlev)*    pressure(:nlev1)) )
+
+      end where
+
+end subroutine middle_layer_avg
+
+
+
+!---------------------------------------------------------------------------------
+!
+! function: Average over a certain layer -- Note this is purely linear
+!
+!---------------------------------------------------------------------------------
+subroutine linear_layer_avg (scalar, nlev, missing, middle )
+
+      integer, intent(in )  ::  nlev
+      real(4), intent(in )  ::  scalar(nlev)
+      real(4), intent(in )  ::  missing
+      real(4), intent(out)  ::  middle(nlev)
+
+      integer :: nlev1
+
+      !-------------------------------------------------------------------
+      !--- Calculate layer averages (mid-point)
+      !-------------------------------------------------------------------
+      nlev1  = nlev - 1
+      middle = missing
+      where( scalar(2:nlev).ne.missing  .and.  scalar(:nlev1).ne.missing )
+         middle(:nlev1)  =  0.5 * (scalar  (2:nlev) + scalar(:nlev1))
+      end where
+
+end subroutine linear_layer_avg
+
+
+
+
+
+
+!---------------------------------------------------------------------------------
+!
+! function: Average over a certain layer
+!
+!---------------------------------------------------------------------------------
+!!!subroutine column_energy (temperature, pressure, nlev, missing, internal_energy )
+!!!
+!!!      integer, intent(in )  ::  nlev
+!!!      real(4), intent(in )  ::  temperature(nlev), pressure(nlev)
+!!!      real(4), intent(in )  ::  missing
+!!!      real(4), intent(out)  ::  internal_energy
+!!!
+!!!      integer :: nlev1
+!!!
+!!!      !-------------------------------------------------------------------
+!!!      !--- Calculate layer averages (mid-point)
+!!!      !-------------------------------------------------------------------
+!!!      internal_energy  =  missing
+!!!      nlev1            =  nlev - 1
+!!!
+!!!      internal_energy  =  sum( 0.5 * (temperature(:nlev1) + temperature(2:nlev)) * (pressure(:nlev1) - pressure(2:nlev)) , 
+!!!                               mask=(temperature(:nlev1).ne.missing .and. temperature(2:nlev).ne.missing  .and.  &
+!!!                                     pressure   (:nlev1).ne.missing .and. pressure   (2:nlev).ne.missing         )     )
+!!!
+!!!
+!!!end subroutine column_energy
+
+
+
 
 
 
@@ -820,41 +911,6 @@ end subroutine columnDensity_Cummulative
 
 
 
-!---------------------------------------------------------------------------------
-! function: Calculate the height above ground using hypsometric equation
-!---------------------------------------------------------------------------------
-subroutine heightAboveGround( pressure, temp, spHumid, nlev, missing, height )
-      integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  pressure (nlev)
-      real(4), intent(in )  ::  temp     (nlev)
-      real(4), intent(in )  ::  spHumid  (nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  height   (nlev)
-
-      integer               ::  zz
-      real(4), parameter    ::  grav = 9.81, Rd = 287.04
-      real(4)               ::  heightAccum, Tvirtual
-
-      height       =  missing
-      heightAccum  =  0
-
-      do zz = 1,nlev-1
-         if( temp(zz  ).ne.missing .and. pressure(zz  ).ne.missing  .and.  spHumid(zz  ).ne.missing .and.  &  
-             temp(zz+1).ne.missing .and. pressure(zz+1).ne.missing  .and.  spHumid(zz+1).ne.missing  ) then
-
-             Tvirtual  =  ((temp(zz)*(1 +0.61*spHumid(zz))) + (temp(zz+1)*(1 +0.61*spHumid(zz+1)))) * 0.5
-
-             heightAccum = heightAccum + (Rd * Tvirtual)/grav * log(pressure(zz)/pressure(zz+1))
-             height(zz)  = heightAccum
-         else
-             height(zz)  =  missing
-         end if
-      end do
-end subroutine heightAboveGround
-
-
-
-
 
 
 !---------------------------------------------------------------------------------
@@ -946,7 +1002,7 @@ subroutine depthPressure(press, nlev, missing, pressureDiff)
      real(4), intent(out)  ::  pressureDiff(nlev)
      pressureDiff  =  missing
      where( press(1:nlev-1).ne.missing  .and.  press(2:nlev).ne.missing )
-            pressureDiff(2:nlev)  =  press(1:nlev-1) - press(2:nlev)
+            pressureDiff(1:nlev-1)  =  press(1:nlev-1) - press(2:nlev)
      endwhere
 end subroutine depthPressure
 
@@ -1517,8 +1573,6 @@ subroutine pblHeat ( nlev , missing , pot_k, press, height, PBLP, PBLT, PBLH )
 !
    real(4), parameter         ::  p_ref = 1e5 , Lv=2.5e6 , cp=1005.7, R_cp=287.04/1005.7
    real(4)                    ::  pot2m
-   real(4), dimension(nlev)   ::  logp
-   real(4), dimension(nlev)   ::  dpress
    real(4), dimension(nlev)   ::  pot_diff
 
    real(4)                    ::  p_up, p_lo, t_up, t_lo, h_up, h_lo
@@ -1545,19 +1599,8 @@ subroutine pblHeat ( nlev , missing , pot_k, press, height, PBLP, PBLT, PBLH )
       !-----------------------------------------------------------------------------
       !-- Initialize middle level variables
       !-----------------------------------------------------------------------------
-      dpress     =  missing
-      logp       =  missing
       pot_diff   =  missing
       pot2m      =  pot_k(1)
-
-
-      !-----------------------------------------------------------------------------
-      !--------
-      !--------  Calculate log pressure to linearize it for slope calculation
-      !--------
-      !-----------------------------------------------------------------------------
-      call logMiss(press, nlev, missing, logp)
-
 
 
       !---------------------------------------------------
@@ -1572,18 +1615,8 @@ subroutine pblHeat ( nlev , missing , pot_k, press, height, PBLP, PBLT, PBLH )
       !-- this is to ensure there is a level above the lowest
       !-- level.  It does not influence any other calculations
       !---------------------------------------------------
-      !      where( pot_k.ne.missing .and. press.ne.missing .and. tmp_k.gt.0 )   pot_diff  =  (pot2m + 0.0001) - pot_k
-      !   where( pot_k.ne.missing .and. press.ne.missing .and. tmp_k.gt.0 )   pot_diff  =  pot2m  -  pot_k
       where( pot_k.ne.missing .and. press.ne.missing )   pot_diff  =  pot2m  -  pot_k
 
-!   write(*,*)  '============================'
-!   write(*,*)  '============================'
-!   write(*,*)  '============================'
-!   write(*,*)  '============================'
-!   write(*,*)  pot2m
-!do i_buoy=1,nlev
-!   write(*,*)   height(i_buoy)/1e3, press(i_buoy)/1e2, pot_k(i_buoy), pot_diff(i_buoy)
-!end do
 
       !-----------------------------------------------------------------------------
       !----- Find the point where the sign first turns negative from the ground up
@@ -1601,22 +1634,17 @@ subroutine pblHeat ( nlev , missing , pot_k, press, height, PBLP, PBLT, PBLH )
       end if
 
 
-!   write(*,*)  '  buoyancy  =  ',num_buoy,num_nobuoy
-!   write(*,*)  '  buoyancy  =  ',i_buoy,i_nobuoy
-
       !-----------------------------------------------------------------------------
       !--- All levels are not buoyant then define PBL as average between the 1st and 2nd layer
       !--- This is done for nocturnal boundary layers which are ill-defined
       !-----------------------------------------------------------------------------
       if( num_buoy.eq.0  .or. (i_buoy.eq.1  .and.  i_nobuoy.eq.2) ) then
 
-!   write(*,*)  '                  NO BUOYANCY              ', i_buoy, i_nobuoy
-
           i_nobuoy   =  2
           i_buoy     =  1
           
-          p_up  =  logp  (i_nobuoy)
-          p_lo  =  logp  (i_buoy)
+          p_up  =  press (i_nobuoy)
+          p_lo  =  press (i_buoy)
 
           t_up  =  pot_k (i_nobuoy)
           t_lo  =  pot_k (i_buoy)
@@ -1627,9 +1655,9 @@ subroutine pblHeat ( nlev , missing , pot_k, press, height, PBLP, PBLT, PBLH )
           !-----------------------------------------------------------------------------
           !--- Average the adjacent to get level in between (linear assumption of course)
           !-----------------------------------------------------------------------------
-          PBLP  =  exp( (p_up + p_lo) / 2.0 )
-          PBLT  =       (t_up + t_lo) / 2.0 
-          PBLH  =       (h_up + h_lo) / 2.0 
+          PBLP  =  (p_up + p_lo) / 2.0
+          PBLT  =  (t_up + t_lo) / 2.0 
+          PBLH  =  (h_up + h_lo) / 2.0 
 
 
           !-----------------------------------------------------------------------------
@@ -1641,8 +1669,8 @@ subroutine pblHeat ( nlev , missing , pot_k, press, height, PBLP, PBLT, PBLH )
           if(PBLH.lt.100) then
              i_nobuoy   =  3
              i_buoy     =  2
-             p_up  =  logp  (i_nobuoy)
-             p_lo  =  logp  (i_buoy)
+             p_up  =  press (i_nobuoy)
+             p_lo  =  press (i_buoy)
              t_up  =  pot_k (i_nobuoy)
              t_lo  =  pot_k (i_buoy)
              h_up  =  height(i_nobuoy)
@@ -1650,23 +1678,19 @@ subroutine pblHeat ( nlev , missing , pot_k, press, height, PBLP, PBLT, PBLH )
              !-----------------------------------------------------------------------------
              !--- Average the adjacent to get level in between (linear assumption of course)
              !-----------------------------------------------------------------------------
-             PBLP  =  exp( (p_up + p_lo) / 2.0 )
-             PBLT  =       (t_up + t_lo) / 2.0 
-             PBLH  =       (h_up + h_lo) / 2.0 
-!   write(*,*)  '                PBLH              ', i_buoy, i_nobuoy, PBLH
+             PBLP  =  (p_up + p_lo) / 2.0
+             PBLT  =  (t_up + t_lo) / 2.0 
+             PBLH  =  (h_up + h_lo) / 2.0 
           end if
 
       else
 
-!   write(*,*)  '                  INTERCEPT           '
-
           !-----------------------------------------------------------------------------
           !--- Average the adjacent to get level in between (linear assumption of course)
           !-----------------------------------------------------------------------------
-          call findIntercept( nlev, i_nobuoy, i_buoy, pot_diff, logp  , missing, PBLP )
+          call findIntercept( nlev, i_nobuoy, i_buoy, pot_diff, press , missing, PBLP )
           call findIntercept( nlev, i_nobuoy, i_buoy, pot_diff, pot_k , missing, PBLT )
           call findIntercept( nlev, i_nobuoy, i_buoy, pot_diff, height, missing, PBLH )
-          PBLP  =  exp( PBLP )
 
           !-----------------------------------------------------------------------------
           !--- Make sure the PBL is not crazy shallow according to buoyancy alone
@@ -1675,8 +1699,8 @@ subroutine pblHeat ( nlev , missing , pot_k, press, height, PBLP, PBLT, PBLH )
           !--- in this case, especially with such low-res veritical data (as in NARR)
           !-----------------------------------------------------------------------------
           if(PBLH.lt.100) then
-             p_up  =  logp  (i_nobuoy)
-             p_lo  =  logp  (i_buoy)
+             p_up  =  press (i_nobuoy)
+             p_lo  =  press (i_buoy)
              t_up  =  pot_k (i_nobuoy)
              t_lo  =  pot_k (i_buoy)
              h_up  =  height(i_nobuoy)
@@ -1684,26 +1708,13 @@ subroutine pblHeat ( nlev , missing , pot_k, press, height, PBLP, PBLT, PBLH )
              !-----------------------------------------------------------------------------
              !--- Average the adjacent to get level in between (linear assumption of course)
              !-----------------------------------------------------------------------------
-             PBLP  =  exp( (p_up + p_lo) / 2.0 )
-             PBLT  =       (t_up + t_lo) / 2.0 
-             PBLH  =       (h_up + h_lo) / 2.0 
+             PBLP  =  (p_up + p_lo) / 2.0
+             PBLT  =  (t_up + t_lo) / 2.0 
+             PBLH  =  (h_up + h_lo) / 2.0 
           end if
 
-!   write(*,*)  '                PBLH              ', i_buoy, i_nobuoy, PBLH
 
       end if
-
-
-!   write(*,*)  '   End of PBLHEAT     =============    ',PBLH,PBLP
-!   write(*,*)  '============================'
-!   write(*,*)  '============================'
-!   write(*,*)  '============================'
-!   write(*,*)  '============================'
-!   write(*,*)  ''
-!   write(*,*)  ''
-!   write(*,*)  ''
-!   write(*,*)  ''
-
 
 
 
@@ -1787,8 +1798,8 @@ subroutine hcfcalc ( nlev, missing, tmp_k, press, qhum, hgt, pblp, TBM, TDEF, BC
       !--------  Calculate pressure difference of each layer
       !--------
       !-----------------------------------------------------------------------------
-      call layerDepth(press, tmp_k(1), qhum(1), press(1), hgt(1), nlev, missing, dpress)
-
+!      call layerDepth(press, tmp_k(1), qhum(1), press(1), hgt(1), nlev, missing, dpress)
+      call depthPressure(press, nlev, missing, dpress)
 
 
       !-----------------------------------------------------------------------------
