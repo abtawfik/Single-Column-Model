@@ -372,6 +372,205 @@ end subroutine calculate_height_above_ground
 
 
 
+
+!---------------------------------------------------------------------------------
+! function: Center finite difference
+!---------------------------------------------------------------------------------
+subroutine centerDiff(x, r, nlev, missing, dXdZ)
+     integer, intent(in )  ::  nlev
+     real(4), intent(in )  ::  x   (nlev)
+     real(4), intent(in )  ::  r   (nlev)
+     real(4), intent(in )  ::  missing
+     real(4), intent(out)  ::  dXdZ(nlev)
+
+     !*********************************
+     !****  Initialize
+     !*********************************
+     dXdz  =  missing
+
+     !*********************************
+     !****  Get the non-endpoints 
+     !*********************************
+     where( x(3:nlev).ne.missing  .and.  x(1:nlev-2).ne.missing  .and.  & 
+            r(3:nlev).ne.missing  .and.  r(1:nlev-2).ne.missing  .and.  &
+            (r(3:nlev) - r(1:nlev-2)).ne.0                              )
+            dXdZ(2:nlev-1)  =  (x(3:nlev) - x(1:nlev-2)) / (r(3:nlev) - r(1:nlev-2))
+     endwhere
+
+     !*********************************
+     !****  Get the endpoints 
+     !*********************************
+     if( (r(2)    - r(1)     ).ne.0 )   dXdZ(1)     =  (x(2)    - x(1)     ) / (r(2)    - r(1)     )
+     if( (r(nlev) - r(nlev-1)).ne.0 )   dXdZ(nlev)  =  (x(nlev) - x(nlev-1)) / (r(nlev) - r(nlev-1))
+end subroutine centerDiff
+
+
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Approximate a smoothed profile lapse rate
+!
+!----------------------------------------------------------------------------------------------
+subroutine smoothed_lapse_rate (theta, pressure, nlev, missing, dTdP)
+
+      integer, intent(in )  ::  nlev
+      real(4), intent(in )  ::  theta(nlev), pressure(nlev)
+      real(4), intent(in )  ::  missing
+      real(4), intent(out)  ::  dTdP(nlev)
+
+      real(4), dimension(nlev) :: smoothed_theta, smoothed_pressure
+      real(4), dimension(nlev) :: temporary_profile, allmissing
+      logical, dimension(nlev) :: notmissing
+
+      dTdP               =  missing
+      allmissing         =  missing
+      notmissing         =  .false.
+      temporary_profile  =  missing
+      call weighted_avg(theta         , pressure         , nlev, missing, smoothed_theta, smoothed_pressure)
+      call centerDiff  (smoothed_theta, smoothed_pressure, nlev, missing, temporary_profile)
+      dTdP  =  temporary_profile
+
+      !-----------------------------------------------------------------------------
+      !-- Collapse the missing values along the level dimension so that mid-points
+      !-- can be calculated using levels on either side of the missing level.
+      !-- This would avoid just ignoring the level
+      !-- Use the PACK function
+      !-----------------------------------------------------------------------------
+      ! notmissing  =  .not.( temporary_profile.eq.missing )
+      ! dTdP        =  pack ( temporary_profile, notmissing, allmissing)
+
+end subroutine smoothed_lapse_rate
+
+
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Calculate the weighted average using the pressure layer depth as the weight
+!           This function is used to smooth high-resolution profiles.  Here Hi-resolution
+!           refers to vertical profiles that have layers less than 10hPa thick
+!           Reason:  The reason for smoothing the profile is to remove high frequency perturbations
+!                    in d(theta)/d(p) which will produce errors when calculating boundary layer height
+!                    using the gradient technique
+!
+!----------------------------------------------------------------------------------------------
+subroutine weighted_avg (theta, pressure, nlev, missing, smoothed_theta, smoothed_pressure)
+
+      integer, intent(in )  ::  nlev
+      real(4), intent(in )  ::  theta(nlev), pressure(nlev)
+      real(4), intent(in )  ::  missing
+      real(4), intent(out)  ::  smoothed_theta(nlev), smoothed_pressure(nlev)
+
+      integer               ::  zz, i0, i1
+      real(4)               ::  pressure_layer(nlev), depth, mid_theta(nlev)
+      real(4), parameter    ::  threshold_depth = 1e3
+
+
+      !==========================================================================
+      !===  Missing value
+      !==========================================================================
+      smoothed_theta     =  missing
+      smoothed_pressure  =  missing
+
+      !==========================================================================
+      !===  Calculate the depth of each layer and mid-point of each theta layer
+      !==========================================================================
+      call depthPressure    (pressure, nlev, missing, pressure_layer)
+
+
+      !==========================================================================
+      !===  If all layers are greater than the threshold depth then do nothing
+      !===  Basically, it is smooth enough
+      !==========================================================================
+      if( all(pressure_layer.ge.threshold_depth) ) then
+         smoothed_theta     =  theta
+         smoothed_pressure  =  pressure
+         return
+      end if
+
+      !==========================================================================
+      !===  Calculate the mid-point of each theta layer
+      !==========================================================================
+      call linear_layer_avg (theta   , nlev, missing, mid_theta )
+
+      !==========================================================================
+      !===  Loop over all layers and average over layers when 
+      !==========================================================================
+      i0  =  1
+      do zz = 2,nlev
+         i1  =  zz
+         depth  =  sum( pressure_layer(i0:i1), mask = pressure_layer(i0:i1).ne.missing )
+         if( depth.ge.threshold_depth ) then
+            smoothed_theta   (i0:i1)  =  sum( mid_theta   (i0:i1) * pressure_layer(i0:i1) / depth , &
+                                              mask = pressure_layer(i0:i1).ne.missing           )
+            smoothed_pressure(i0:i1)  =  sum( pressure(i0:i1) * pressure_layer(i0:i1) / depth , &
+                                              mask = pressure_layer(i0:i1).ne.missing           )
+            i0 = i1
+         end if
+      end do
+
+end subroutine weighted_avg
+
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Calculate the weighted average using the pressure layer depth as the weight
+!           This function is used to smooth high-resolution profiles.  Here Hi-resolution
+!           refers to vertical profiles that have layers less than 10hPa thick
+!           Reason:  The reason for smoothing the profile is to remove high frequency perturbations
+!                    in d(theta)/d(p) which will produce errors when calculating boundary layer height
+!                    using the gradient technique
+!
+!           USE NOTE:  Need to pass in nlev_out but this is calculated outside of this routine
+!                      This routine is generally not called alone but rather with a wrapper function
+!                      The wrapper function (weighted_average) makes it so nlev_out is calculated outside
+!                      so we don't have to allocate and deallocate the out variables 
+!----------------------------------------------------------------------------------------------
+!subroutine weighted_average (theta, pressure, nlev, nlev_out, missing, smoothed_theta, smoothed_pressure)
+
+!      integer, intent(in )  ::  nlev, nlev_out
+!      real(4), intent(in )  ::  theta(nlev), pressure(nlev)
+!      real(4), intent(in )  ::  missing
+!      real(4), intent(out)  ::  smoothed_theta(nlev_out), smoothed_pressure(nlev_out)
+
+!      integer               ::  zz, cc, i0, i1
+!      real(4)               ::  pressure_layer(nlev), depth
+!      real(4), parameter    ::  threshold_depth = 1e4
+
+!      smoothed_theta     =  missing
+!      smoothed_pressure  =  missing
+!      call depthPressure(pressure, nlev, missing, pressure_layer)
+
+!      cc  =  1
+!      i0  =  1
+!      do zz = 2,nlev
+!         i1  =  1
+!         depth  =  sum( pressure_layer(i0:i1), mask = pressure_layer(i0:i1).ne.missing )
+!         if( depth.ge.threshold_depth ) then
+!            smoothed_theta   (cc)  =  sum( theta   (i0:i1) * pressure_layer(i0:i1) / depth )
+!            smoothed_pressure(cc)  =  sum( pressure(i0:i1) * pressure_layer(i0:i1) / depth )
+!            i0 = i1
+!            cc = cc + 1
+!         end if
+!      end do
+
+!end subroutine weighted_average
+
+
+
+
+
+
+
+
 !----------------------------------------------------------------------------------------------
 !
 ! function: Add sensible heat to the across the mixed layer
@@ -2785,3 +2984,80 @@ subroutine hcfloop ( nlev, nlat, nlon, nday, missing, T, P, Q, t2m, q2m, psfc, T
 end subroutine hcfloop
 
 
+
+
+
+
+
+!---------------------------------------------------------------------------------
+!
+! subroutines: Estimates the PBL height by using the gradient in potential temperature
+!              1st smooth the profiles if the resolution is high
+!              2nd calculate the vertical gradient of d(theta)/d(pressure)
+!              3rd find the level where the gradient is <= -0.0002 K/Pa
+!
+!---------------------------------------------------------------------------------
+subroutine pbl_gradient ( nlev, missing, theta, pressure, height, PBLP, PBLT, PBLH )
+
+   implicit none
+!
+! Input/Output Variables
+!
+   integer, intent(in   )                   ::  nlev        ! *** # of atmospheric levels
+   real(4), intent(in   )                   ::  missing     ! *** Missing values
+   real(4), intent(in   ), dimension(nlev)  ::  theta       ! *** Potential Temperature (level), [K]
+   real(4), intent(in   ), dimension(nlev)  ::  pressure    ! *** Pressure (level) [Pa]
+   real(4), intent(in   ), dimension(nlev)  ::  height      ! *** Height (level) [m]
+   real(4), intent(out  )                   ::  PBLP        ! *** pressure of boundary layer height [Pa]
+   real(4), intent(out  )                   ::  PBLT        ! *** temperature of boundary layer height [K]
+   real(4), intent(out  )                   ::  PBLH        ! *** height of boundary layer height [m]
+!
+! Local variables
+!
+   real(4), parameter  ::  threshold_gradient = -0.0002
+
+   integer             ::  iupper, ilower
+   real(4)             ::  dTdP(nlev)
+
+
+!-----------------------------------------------------------------------------
+
+      !-----------------------------------------------------------------------------
+      !-- Initialize output variables
+      !-----------------------------------------------------------------------------
+      PBLP  =  missing
+      PBLT  =  missing
+      PBLH  =  missing
+
+
+      !-----------------------------------------------------------------------------
+      !-- calculate a smoothed lapse rate only if profile is hi-res 
+      !-- e.g. if depths are less than 10 hPa  otherwise just use the same profile
+      !-----------------------------------------------------------------------------
+      call smoothed_lapse_rate (theta, pressure, nlev, missing, dTdP)
+
+
+      !-----------------------------------------------------------------------------
+      !-- If all levels do not exceed the threshold 
+      !-- or threshold is only exceeded above an unrealistic 
+      !-----------------------------------------------------------------------------
+      ! if( all(dTdP.gt.threshold_gradient) ) then
+      !    
+      ! end if
+
+      !-----------------------------------------------------------------------------
+      !-- Return indices where the threshold exceeds
+      !-----------------------------------------------------------------------------
+      call minIndex            (nlev , 1, (dTdP.ne.missing .and. dTdP.le.threshold_gradient), ilower )
+      iupper  =  ilower + 1
+
+
+      !-----------------------------------------------------------------------------
+      !-- Calculate boundary layer top properties -->  Just get linear average
+      !-----------------------------------------------------------------------------
+      PBLH  =  sum(height  (ilower:iupper)) / 2.0
+      PBLT  =  sum(theta   (ilower:iupper)) / 2.0
+      PBLP  =  sum(pressure(ilower:iupper)) / 2.0
+      return
+
+end subroutine pbl_gradient

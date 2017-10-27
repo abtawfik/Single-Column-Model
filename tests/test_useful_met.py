@@ -96,6 +96,24 @@ def test_linear_avg():
     assert mid_point[nlev-1] == missing
 
 
+
+'''
+Test the weighted average function in three ways 
+Don't perform weighted average for sufficiently coarse vertical profiles
+---weighted_avg---
+'''
+def test_weighted_avg():
+    missing       =  -99999.0
+    pressure      =  np.array( [100000, 99900, 99700, 99500, 99000] )
+    theta         =  np.array( [ 2  ,  4 ,  6 ,  8 ,  10] )
+    mid_point     =  linear_layer_avg(theta, missing)
+    dp            =  depthpressure(pressure, missing)
+    numpy_wgt     =  np.average  (mid_point[:4], weights=dp[:4])
+    handy_wgt, p  =  weighted_avg(theta, pressure, missing) 
+    assert handy_wgt[0] == pytest.approx(numpy_wgt , 0.001)
+
+
+
 '''
 Test difference between pressure levels
 ---depthPressure---
@@ -156,55 +174,24 @@ Craig Enhanced Sounding Data
 '''
 def test_hi_res_PBL():
     # Read in the hi-res data
-    df  =  pd.read_csv("./test_data/Hi_res_test_profile.csv")
-    pressure     =  df["Pressure"]
-    temperature  =  df["Temperature"]
-    height       =  df["Height"]
-    nlev         =  df.shape[0]
-    missing      =  -99999.
-    # test pbl formulation
-    theta           =  potentialtemperature(temperature, pressure, missing)
-    pblp,pblt,pblh  =  pblheat             (missing, theta, pressure, height)
-    assert pblp >= 82000 and pblp <= 86000
+    test_files = [ './test_data/Hi_res_test_profile.20150711.173000.csv', 
+                   './test_data/Hi_res_test_profile.20150711.213000.csv', 
+                   './test_data/Hi_res_test_profile.20150826.223000.csv',
+                   './test_data/Hi_res_test_profile.csv']
+    nprofiles  = len(test_files)
+    bounds     = [ (91000,94000), (84000,87000), (83000,86000), (77000,80500) ]
+    
+    for t in range(0,nprofiles):
+        df              =  pd.read_csv(test_files[t])
+        pressure        =  df["Pressure"]
+        temperature     =  df["Temperature"]
+        height          =  df["Height"]
+        nlev            =  df.shape[0]
+        missing         =  -99999.
+        theta           =  potentialtemperature(temperature, pressure, missing)
+        pblp,pblt,pblh  =  pbl_gradient        (missing, theta, pressure, height)
+        assert pblp >= bounds[t][0] and pblp <= bounds[t][1]
 
-
-    # Read in the hi-res data
-    df  =  pd.read_csv("./test_data/Hi_res_test_profile.20150711.213000.csv")
-    pressure     =  df["Pressure"]
-    temperature  =  df["Temperature"]
-    height       =  df["Height"]
-    nlev         =  df.shape[0]
-    missing      =  -99999.
-    # test pbl formulation
-    theta           =  potentialtemperature(temperature, pressure, missing)
-    pblp,pblt,pblh  =  pblheat             (missing, theta, pressure, height)
-    assert pblp >= 84000 and pblp <= 87000
-
-
-    # Read in the hi-res data
-    df  =  pd.read_csv("./test_data/Hi_res_test_profile.20150711.173000.csv")
-    pressure     =  df["Pressure"]
-    temperature  =  df["Temperature"]
-    height       =  df["Height"]
-    nlev         =  df.shape[0]
-    missing      =  -99999.
-    # test pbl formulation
-    theta           =  potentialtemperature(temperature, pressure, missing)
-    pblp,pblt,pblh  =  pblheat             (missing, theta, pressure, height)
-    assert pblp >= 91000 and pblp <= 94000
-
-
-    # Read in the hi-res data
-    df  =  pd.read_csv("./test_data/Hi_res_test_profile.20150826.223000.csv")
-    pressure     =  df["Pressure"]
-    temperature  =  df["Temperature"]
-    height       =  df["Height"]
-    nlev         =  df.shape[0]
-    missing      =  -99999.
-    # test pbl formulation
-    theta           =  potentialtemperature(temperature, pressure, missing)
-    pblp,pblt,pblh  =  pblheat             (missing, theta, pressure, height)
-    assert pblp >= 83000 and pblp <= 86000
 
 
 
@@ -219,12 +206,12 @@ def test_stable_PBL():
     theta           =  np.linspace(300,430,27)
     pressure        =  np.linspace(1000,350,27)
     pressure        =  pressure * 1e2
-    # test of stable boundary layer
     theta[0]        =  285.0
     temperature     =  calculate_temperature        (theta      ,pressure,missing)
     height          =  calculate_height_above_ground(temperature,pressure,missing)
-    pblp,pblt,pblh  =  pblheat                      (missing    ,theta   ,pressure,height)
-    assert pblt == 295
+    pblp,pblt,pblh  =  pbl_gradient        (missing, theta, pressure, height)
+    assert pblt >= 294 and pblt <= 296
+
 
 
 '''
@@ -237,13 +224,16 @@ def test_unstable_PBL():
     theta           =  np.linspace(300,430,27)
     pressure        =  np.linspace(1000,350,27)
     pressure        =  pressure * 1e2
-
-    # test with buoyancy
-    theta[0]        =  322.5
+    theta[0:5]      =  322.5
+   
     temperature     =  calculate_temperature        (theta      ,pressure,missing)
     height          =  calculate_height_above_ground(temperature,pressure,missing)
-    pblp,pblt,pblh  =  pblheat                      (missing    ,theta   ,pressure,height)
-    assert pblt == 322.5
+    pblp,pblt,pblh  =  pbl_gradient        (missing, theta, pressure, height)
+    print(pblp)
+    print(pblt)
+    assert pblt >= 320 and pblt <= 325
+
+
 
 '''
 Isothermal profile
@@ -251,11 +241,6 @@ Isothermal profile
 
 
 
-'''
-Wiggly hi-resolution profile test
-Tests whether boundary layer depth is identified for a profile that
-has a bunch of small wiggles in the profile
-'''
 
 
 
