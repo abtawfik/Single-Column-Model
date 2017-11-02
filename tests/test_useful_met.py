@@ -177,9 +177,22 @@ def test_hi_res_PBL():
     test_files = [ './test_data/Hi_res_test_profile.20150711.173000.csv', 
                    './test_data/Hi_res_test_profile.20150711.213000.csv', 
                    './test_data/Hi_res_test_profile.20150826.223000.csv',
-                   './test_data/Hi_res_test_profile.csv']
+                   './test_data/Hi_res_test_profile.csv'                ,
+                   './test_data/Hi_res_test_profile.20150815.113000.csv',
+                   './test_data/Hi_res_test_profile.20150815.133000.csv',
+                   './test_data/Hi_res_test_profile.20150815.153000.csv',
+                   './test_data/Hi_res_test_profile.20150815.193000.csv',
+                   './test_data/Hi_res_test_profile.20150815.203000.csv',
+                   './test_data/Hi_res_test_profile.20150816.142900.csv',
+                   './test_data/Hi_res_test_profile.20150816.152900.csv',
+                   './test_data/Hi_res_test_profile.20150816.203800.csv',
+                   './test_data/Hi_res_test_profile.20150827.113300.csv',
+                   './test_data/Hi_res_test_profile.20150827.132800.csv']
     nprofiles  = len(test_files)
-    bounds     = [ (91000,94000), (84000,87000), (83000,86000), (77000,80500) ]
+    #########----   7/11 173000    7/11 213000    8/26 223000   No time stamp   8/15 113000    8/15 133000    8/15 153000    8/15 193000    8/15 203000
+    bounds     = [ (91000,94000), (84000,87000), (83000,86000), (77000,80500), (96500,99000), (97000,99000), (90500,93000), (81000,83000), (82500,85000),
+    ########        8/16 142900    8/16 152900    8/16 203800    8/27 113300    8/27 132800
+                   (95000,97000), (95000,97000), (77500,81000), (96000,98000), (96000,98000) ]
     
     for t in range(0,nprofiles):
         df              =  pd.read_csv(test_files[t])
@@ -191,8 +204,6 @@ def test_hi_res_PBL():
         theta           =  potentialtemperature(temperature, pressure, missing)
         pblp,pblt,pblh  =  pbl_gradient        (missing, theta, pressure, height)
         assert pblp >= bounds[t][0] and pblp <= bounds[t][1]
-
-
 
 
 
@@ -235,10 +246,149 @@ def test_unstable_PBL():
 
 
 
+
 '''
-Isothermal profile
+Test the lowest level inject moisture in PBL subroutine
+---inject_moisture---
+and the higher level wrapper that returns mixing ratio
+---inject_and_mix
+'''
+def test_inject_moisture():
+    ############################################################################################
+    #### Test the low-level subroutine to ensure that moisture increases by exactly the flux 
+    #### amount in the first layer
+    ############################################################################################
+    nlev         =  8
+    missing      =  -99999.
+    mixLevel     =  900.
+    tracer       =  np.ones( nlev )
+    pressure     =  np.linspace(1000,300,nlev)
+    layer_depth  =  max(pressure) - mixLevel 
+    flux_in      =  1.0
+    dp           =  depthpressure(pressure, missing)
+    new_density  =  inject_moisture(tracer,flux_in,mixLevel,pressure,dp,layer_depth,missing)
+    assert     new_density[0 ] == 2.0
+    assert all(new_density[1:] == 1.0)
+
+    ############################################################################################
+    #### Test the full moisture flux injection call
+    ############################################################################################
+    nlev         =  4
+    missing      =  -99999.
+    mixLevel     =  99901.9
+    mixing_ratio =  np.ones( nlev )/10.
+    pressure     =  np.array( [100000, 99901.9, 95000, 80000] )
+    flux_in      =  1.0
+    dp           =  depthpressure(pressure, missing)
+    mixedprofile =  inject_and_mix(mixLevel,flux_in,pressure,mixing_ratio,dp,missing)
+    assert mixedprofile[0] == pytest.approx(0.2, 0.0001)
+    assert all(mixedprofile[1:] == 0.1)
+
+
+    ############################################################################################
+    #### Test the individual components that build up to create the moisture injection
+    #### it is tested by comparing the sums of the moisture profile before and after injection
+    #### the column should also increase exactly the amount of the flux injection
+    ############################################################################################
+    nlev         =  4
+    missing      =  -99999.
+    mixLevel     =  98000.
+    mixing_ratio =  np.ones( nlev )/10.
+    pressure     =  np.array( [100000, 99901.9, 95000, 80000] )
+    layer_depth  =  max(pressure) - mixLevel 
+    flux_in      =  1.0
+    dp           =  depthpressure(pressure, missing)
+    rho          =  columndensity     ( mixing_ratio, dp, missing )
+    density      =  columndensitynomix(               dp, missing )
+    trues        =  np.where( np.ones(nlev) == 1, True, False )
+    num_in_layer =  countplus( np.where(pressure>mixLevel,True,False), 1)
+    ilayer_top   =  maxindex(1,np.where(pressure>mixLevel,True,False))
+    layer_depth  =  sumit   (1,trues[0:ilayer_top],dp[0:ilayer_top])
+    new_tracer   =  inject_moisture(density, flux_in, mixLevel, pressure, dp, layer_depth, missing)
+    sum_old      =  np.sum( density[:nlev-1] )
+    sum_new      =  np.sum( new_tracer[:nlev-1] )
+    difference   =  sum_new - sum_old
+    assert difference == flux_in
+
+
+
+'''
+nlev         =  4
+missing      =  -99999.
+mixLevel     =  99901.9
+mixing_ratio =  np.ones( nlev )/10.
+pressure     =  np.array( [100000, 99901.9, 95000, 80000] )
+flux_in      =  1.0
+dp           =  depthpressure(pressure, missing)
+mixedprofile =  inject_and_mix(mixLevel,flux_in,pressure,mixing_ratio,dp,missing)
+
+
+nlev         =  8
+missing      =  -99999.
+mixLevel     =  900.
+layer_depth  =  100.
+tracer       =  np.ones( nlev )
+pressure     =  np.linspace(1000,300,nlev)
+flux_in      =  1.0
+dp           =  depthpressure(pressure, missing)
+new_density  =  inject_moisture(tracer,flux_in,mixLevel,pressure,dp,layer_depth,missing)
 '''
 
+
+'''
+Code not test yet:
+---- total_density
+---- packIt
+---- assign_layer
+---- avg_over_layer
+---- add_sensible_heat
+---- idealGas_P
+---- virtualTemp   
+---- Latent_heat_of_condensation
+---- midLevel
+---- trueMidLevel
+---- surfacePressure
+---- virtualPotentialTemp
+---- virtualTemperature
+---- layerDepth
+---- logMiss
+---- inject_and_mix
+----   
+
+'''
+
+
+
+
+'''
+Test Hi-resoluation real-world PBL from
+Craig Enhanced Sounding Data
+'''
+def test_hi_res_add_sensible_heat():
+    missing         =  -99999.
+    temperature     =  np.linspace(0,10,11)
+    height          =  np.linspace(0,10,11)
+    theta           =  potentialtemperature(temperature, pressure, missing)
+    pblh            =  3.0
+    dt              =  1.0
+    sensible_heat   =  20.0
+    pbl_depth       =  2048.929664
+    newT            =  add_sensible_heat (temperature, sensible_heat, pbl_depth, height, pblh, dt, missing )
+
+    assert pblp >= bounds[t][0] and pblp <= bounds[t][1]
+
+
+
+missing         =  -99999.
+temperature     =  np.linspace(0,10,11)
+height          =  np.linspace(0,10,11)
+pressure        =  temperature*1000 + (90000.)
+pressure        =  pressure[::-1]
+pblh            =  3.0
+dt              =  1.0
+sensible_heat   =  20.0
+pbl_depth       =  0.1950879984
+newT            =  add_sensible_heat (temperature, sensible_heat, pbl_depth, height, pblh, dt, missing )
 
 
 
@@ -287,3 +437,36 @@ def test_PBL_missing_value():
     pblp,pblt,pblh  =  pblheat                      (missing    ,theta   ,pressure,height)
     assert pblt == 322.5
 '''
+
+
+
+'''
+df           =  pd.read_csv(test_files[t])
+pressure     =  df["Pressure"]
+temperature  =  df["Temperature"]
+height       =  df["Height"]
+nlev         =  df.shape[0]
+missing      =  -99999.
+theta        =  potentialtemperature(temperature, pressure, missing)
+dtdp         =  smoothed_lapse_rate(theta,pressure,missing)
+f, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True)
+ax1.plot(theta         , pressure/1e2         , '-k')
+ax1.plot(smoothed_theta, smoothed_pressure/1e2, '--r')
+ax1.set_ylim([1000,750])
+ax1.set_xlim([300 ,312])
+
+ax2.plot(dtdp, pressure/1e2, 'ob')
+ax2.set_ylim([1000   , 750  ])
+ax2.set_xlim([-0.004,0.004])
+plt.gca().invert_yaxis()
+
+ax3.plot(dtdp, smoothed_pressure/1e2, 'ob')
+ax3.set_ylim([1000   , 750  ])
+ax3.set_xlim([-0.004,0.004])
+
+plt.show()
+del ax1
+del ax2
+del ax3
+'''
+

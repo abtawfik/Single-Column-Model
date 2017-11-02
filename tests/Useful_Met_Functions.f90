@@ -520,54 +520,6 @@ end subroutine weighted_avg
 
 
 
-!----------------------------------------------------------------------------------------------
-!
-! function: Calculate the weighted average using the pressure layer depth as the weight
-!           This function is used to smooth high-resolution profiles.  Here Hi-resolution
-!           refers to vertical profiles that have layers less than 10hPa thick
-!           Reason:  The reason for smoothing the profile is to remove high frequency perturbations
-!                    in d(theta)/d(p) which will produce errors when calculating boundary layer height
-!                    using the gradient technique
-!
-!           USE NOTE:  Need to pass in nlev_out but this is calculated outside of this routine
-!                      This routine is generally not called alone but rather with a wrapper function
-!                      The wrapper function (weighted_average) makes it so nlev_out is calculated outside
-!                      so we don't have to allocate and deallocate the out variables 
-!----------------------------------------------------------------------------------------------
-!subroutine weighted_average (theta, pressure, nlev, nlev_out, missing, smoothed_theta, smoothed_pressure)
-
-!      integer, intent(in )  ::  nlev, nlev_out
-!      real(4), intent(in )  ::  theta(nlev), pressure(nlev)
-!      real(4), intent(in )  ::  missing
-!      real(4), intent(out)  ::  smoothed_theta(nlev_out), smoothed_pressure(nlev_out)
-
-!      integer               ::  zz, cc, i0, i1
-!      real(4)               ::  pressure_layer(nlev), depth
-!      real(4), parameter    ::  threshold_depth = 1e4
-
-!      smoothed_theta     =  missing
-!      smoothed_pressure  =  missing
-!      call depthPressure(pressure, nlev, missing, pressure_layer)
-
-!      cc  =  1
-!      i0  =  1
-!      do zz = 2,nlev
-!         i1  =  1
-!         depth  =  sum( pressure_layer(i0:i1), mask = pressure_layer(i0:i1).ne.missing )
-!         if( depth.ge.threshold_depth ) then
-!            smoothed_theta   (cc)  =  sum( theta   (i0:i1) * pressure_layer(i0:i1) / depth )
-!            smoothed_pressure(cc)  =  sum( pressure(i0:i1) * pressure_layer(i0:i1) / depth )
-!            i0 = i1
-!            cc = cc + 1
-!         end if
-!      end do
-
-!end subroutine weighted_average
-
-
-
-
-
 
 
 
@@ -576,13 +528,11 @@ end subroutine weighted_avg
 ! function: Add sensible heat to the across the mixed layer
 !
 !----------------------------------------------------------------------------------------------
-!subroutine add_sensible_heat (initialProfile, sensible_heat, avgRHO, height, pblh, dt, nlev, missing, newProfile )
 subroutine add_sensible_heat (initialProfile, sensible_heat, pbl_depth, height, pblh, dt, nlev, missing, newProfile )
 
       integer, intent(in )  ::  nlev
       real(4), intent(in )  ::  initialProfile(nlev), sensible_heat , dt
       real(4), intent(in )  ::  pbl_depth           , height(nlev), pblh
-!      real(4), intent(in )  ::  avgRHO              , height(nlev), pblh
       real(4), intent(in )  ::  missing
       real(4), intent(out)  ::  newProfile(nlev)
       real(4), parameter    ::  grav = 9.81, cp = 1005.7, cp_g = cp/grav
@@ -590,10 +540,11 @@ subroutine add_sensible_heat (initialProfile, sensible_heat, pbl_depth, height, 
       newProfile = initialProfile
       where( initialProfile.ne.missing  .and.  initialProfile(1).ne.missing  .and.  height.le.pblh )
           newProfile  =  initialProfile(1) + (dt * (sensible_heat / (pbl_depth*cp_g)))
-      !    newProfile  =  initialProfile(1) + ( (dt * sensible_heat) / (avgRHO*cp*pblh) )
       endwhere
 
 end subroutine add_sensible_heat
+
+
 
 
 
@@ -659,33 +610,6 @@ end subroutine linear_layer_avg
 
 
 
-
-!---------------------------------------------------------------------------------
-!
-! function: Average over a certain layer
-!
-!---------------------------------------------------------------------------------
-!!!subroutine column_energy (temperature, pressure, nlev, missing, internal_energy )
-!!!
-!!!      integer, intent(in )  ::  nlev
-!!!      real(4), intent(in )  ::  temperature(nlev), pressure(nlev)
-!!!      real(4), intent(in )  ::  missing
-!!!      real(4), intent(out)  ::  internal_energy
-!!!
-!!!      integer :: nlev1
-!!!
-!!!      !-------------------------------------------------------------------
-!!!      !--- Calculate layer averages (mid-point)
-!!!      !-------------------------------------------------------------------
-!!!      internal_energy  =  missing
-!!!      nlev1            =  nlev - 1
-!!!
-!!!      internal_energy  =  sum( 0.5 * (temperature(:nlev1) + temperature(2:nlev)) * (pressure(:nlev1) - pressure(2:nlev)) , 
-!!!                               mask=(temperature(:nlev1).ne.missing .and. temperature(2:nlev).ne.missing  .and.  &
-!!!                                     pressure   (:nlev1).ne.missing .and. pressure   (2:nlev).ne.missing         )     )
-!!!
-!!!
-!!!end subroutine column_energy
 
 
 
@@ -1283,6 +1207,30 @@ end subroutine logMiss
 
 
 
+!-----------------------------------------------------------------------------
+! function: Inject latent heat flux across the mixed layer [kg/m2]
+!-----------------------------------------------------------------------------
+subroutine inject_moisture( tracer_density, injection_amount, mixLevel, press, dp, layer_depth, nlev, missing, new_density )
+
+      integer, intent(in )  ::  nlev
+      real(4), intent(in )  ::  missing
+      real(4), intent(in )  ::  injection_amount      !*** amount of tracer to be injected [kg/m2]
+      real(4), intent(in )  ::  mixLevel              !*** Pressure of level to mix down from [Pa]
+      real(4), intent(in )  ::  tracer_density(nlev)  !*** tracer to be mixed assuming units of [kg/kg]
+      real(4), intent(in )  ::  dp(nlev)              !*** depth of each pressure level [Pa]
+      real(4), intent(in )  ::  press (nlev)          !*** pressure levels [Pa]
+      real(4), intent(in )  ::  layer_depth           !*** depth of boundary layer psfc - pblp [Pa]
+      real(4), intent(out)  ::  new_density(nlev)     !*** return mixed tracer profile [kg/kg]
+
+     new_density  =  tracer_density
+     where( press.gt.mixLevel .and. press.ne.missing .and. new_density.ne.missing )
+         new_density  =  new_density + (injection_amount * (dp/layer_depth))
+     end where
+
+end subroutine inject_moisture
+
+
+
 
 !-----------------------------------------------------------------------------
 ! function: Inject latent heat flux across the mixed layer [kg/m2]
@@ -1298,17 +1246,19 @@ subroutine inject_and_mix( mixLevel, injection, press, tracer, dpress, nlev, mis
       real(4), intent(in )  ::  press (nlev)        !*** pressure levels [Pa]
       real(4), intent(out)  ::  MixedProfile(nlev)  !*** return mixed tracer profile [kg/kg]
 
-      integer  ::  zz, num_in_layer, ilayer_top
+      integer  ::  zz, ilayer_top
       real(4)  ::  ilevel(nlev), layer_depth
-      real(4)  ::  tracer_density(nlev), air_density(nlev)
+      real(4)  ::  tracer_density(nlev), air_density(nlev), tracer_density_w_flux(nlev)
       real(4)  ::  tracer_mix          , air_mix
 
 
 
       !-----------------------------------------------------
       !--------  Initialize output variable
+      !--------  don't do anything if there is no flux
       !-----------------------------------------------------
       MixedProfile  =  tracer
+      if( injection.le.0 ) return
 
 
       !-----------------------------------------------------
@@ -1329,9 +1279,8 @@ subroutine inject_and_mix( mixLevel, injection, press, tracer, dpress, nlev, mis
       !-----------------------------------------------------
       !--------  Are there levels within the mixed layer?
       !-----------------------------------------------------
-      num_in_layer  =  count( press.ge.mixLevel  .and.  press.ne.missing, DIM = 1 )
-      ilayer_top    =  maxloc( ilevel, DIM = 1, MASK =  press.ge.mixLevel  .and.  press.ne.missing )
-      layer_depth   =  sum( dpress(:ilayer_top) )
+      call maxIndex ( nlev, 1, (press.gt.mixLevel  .and.  press.ne.missing)        , ilayer_top   )
+      call sumIt    ( nlev, 1, (press.gt.mixLevel  .and.  press.ne.missing), dpress, layer_depth  )
 
 
       !*********************************************************************
@@ -1348,64 +1297,55 @@ subroutine inject_and_mix( mixLevel, injection, press, tracer, dpress, nlev, mis
       !****    sunrise where you have some ET but weak to no mixing
       !****
       !*********************************************************************
-      if( injection.gt.0 ) then
+      !--------------------------
+      !---  Inject moisture
+      !--------------------------
+      call inject_moisture( tracer_density, injection, mixLevel, press, dpress, layer_depth, nlev, missing, &
+                            tracer_density_w_flux )
 
 
-         !*********************************************************************
-         !**** CASE 1:  If the PBL is above outside of the first level
-         !*********************************************************************
-         if( num_in_layer.gt.1 ) then
-            !--------------------------
-            !---  Inject moisture
-            !--------------------------
-            do zz = 1,nlev
-               if( press(zz).ge.mixLevel .and. press(zz).ne.missing .and. tracer_density(zz).ne.missing ) then
-                  tracer_density(zz) = tracer_density(zz) + injection * (dpress(zz)/layer_depth)
-               end if
-            end do
-
-            !--------------------------------------------
-            !---  Sum over layer and return mixing ratio
-            !--------------------------------------------
-            tracer_mix  =  sum( tracer_density(1:ilayer_top) )
-            air_mix     =  sum(    air_density(1:ilayer_top) )
-            if( tracer_mix.ne.missing  .and.  air_mix.ne.missing  .and.  air_mix.ne.0 ) then
-               MixedProfile(:ilayer_top)  =  tracer_mix / air_mix
-            end if
-
-
-
-         !*********************************************************************
-         !**** CASE 2:  the PBL is within the first layer (which tends to be shallow)
-         !*********************************************************************
-         else if ( num_in_layer.eq.1 ) then
-
-            !--------------------------
-            !---  Inject moisture
-            !--------------------------
-            layer_depth  =  sum( dpress(1:2) )
-            do zz = 1,2
-               if( dpress(zz).ne.missing  .and.  tracer_density(zz).ne.missing ) then
-                  tracer_density(zz) = tracer_density(zz) + injection * (dpress(zz)/layer_depth)
-               end if
-            end do
-
-            !--------------------------------------------
-            !---  Sum over layer and return mixing ratio
-            !--------------------------------------------
-            tracer_mix  =  sum( tracer_density(1:2) )
-            air_mix     =  sum(    air_density(1:2) )
-            if( tracer_mix.ne.missing  .and.  air_mix.ne.missing  .and.  air_mix.ne.0 ) then
-               MixedProfile(1:2)  =  tracer_mix / air_mix
-            end if
-
-         end if
-
+      !--------------------------------------------
+      !---  Sum over layer and return mixing ratio
+      !--------------------------------------------
+      tracer_mix  =  sum( tracer_density_w_flux(1:ilayer_top) )
+      air_mix     =  sum(           air_density(1:ilayer_top) )
+      if( tracer_mix.ne.missing  .and.  air_mix.ne.missing  .and.  air_mix.ne.0 ) then
+         MixedProfile(:ilayer_top)  =  tracer_mix / air_mix
       end if
 
 
 end subroutine inject_and_mix
 
+
+
+!---------------------------------------------------------------------------------
+!
+! function: Calculate integrated column energy [J/m2]
+!
+!---------------------------------------------------------------------------------
+subroutine column_energy (temperature, pressure, nlev, missing, internal_energy )
+
+      integer, intent(in )  ::  nlev
+      real(4), intent(in )  ::  temperature(nlev), pressure(nlev)
+      real(4), intent(in )  ::  missing
+      real(4), intent(out)  ::  internal_energy
+
+      integer               ::  nlev1
+      real(4), parameter    ::  grav = 9.81, cp = 1005.7, cp_g = cp/grav
+
+      !-------------------------------------------------------------------
+      !--- Calculate layer averages (mid-point)
+      !-------------------------------------------------------------------
+      internal_energy  =  missing
+      nlev1            =  nlev - 1
+
+      internal_energy  =  sum( 0.5  * (temperature(:nlev1) + temperature(2:nlev)) *                                 & 
+                               cp_g * (pressure   (:nlev1) - pressure   (2:nlev))  ,                                &
+                               mask= (temperature(:nlev1).ne.missing .and. temperature(2:nlev).ne.missing  .and.    &
+                                      pressure   (:nlev1).ne.missing .and. pressure   (2:nlev).ne.missing         ) )
+
+
+end subroutine column_energy
 
 
 
@@ -1478,6 +1418,27 @@ subroutine maskAbove( applyMaskTo, maskValue, limitingVariable, fillValue, nlev,
       maskedAbove  =  applyMaskTo
       where( limitingVariable.ge.fillValue )  maskedAbove  =  maskValue
 end subroutine maskAbove
+
+
+
+
+
+
+!-----------------------------------------------------------------------------
+! function: use the fortran count function
+!-----------------------------------------------------------------------------
+subroutine sumIt ( nlev, dims, conditional, var_to_sum, This_Sum )
+      integer, intent(in )  ::  nlev
+      real(4), intent(in )  ::  var_to_sum (nlev)
+      logical, intent(in )  ::  conditional(nlev)
+      integer, intent(in )  ::  dims
+      real(4), intent(out)  ::  This_Sum
+     
+      This_Sum  =  sum( var_to_sum, mask = conditional, dim = dims )
+end subroutine sumIt
+
+
+
 
 
 
@@ -3014,7 +2975,7 @@ subroutine pbl_gradient ( nlev, missing, theta, pressure, height, PBLP, PBLT, PB
 !
 ! Local variables
 !
-   real(4), parameter  ::  threshold_gradient = -0.0002
+   real(4), parameter  ::  threshold_gradient = -0.0003
 
    integer             ::  iupper, ilower
    real(4)             ::  dTdP(nlev)
@@ -3048,7 +3009,7 @@ subroutine pbl_gradient ( nlev, missing, theta, pressure, height, PBLP, PBLT, PB
       !-----------------------------------------------------------------------------
       !-- Return indices where the threshold exceeds
       !-----------------------------------------------------------------------------
-      call minIndex            (nlev , 1, (dTdP.ne.missing .and. dTdP.le.threshold_gradient), ilower )
+      call minIndex (nlev , 1, (dTdP.ne.missing .and. dTdP.le.threshold_gradient), ilower )
       iupper  =  ilower + 1
 
 
