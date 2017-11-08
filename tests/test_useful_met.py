@@ -312,6 +312,71 @@ def test_inject_moisture():
 
 
 
+
+'''
+Test to see if when given an atmospheric profile of temperature,
+the code can return a PBL energy [J/m2] and then reconstruct the original
+temperature profile.  This shows the integration works and no info is lost
+during the transform.
+'''
+def test_pbl_energy_temp_reconstruction():
+    nlev            =  300
+    R               =  287.
+    grav            =  9.81
+    cp              =  1005.7
+    dry_lapse       =  -grav/cp
+    missing         =  -99999.
+    height          =  np.linspace(0,5,nlev) * 1e3
+    temperature     =  np.zeros(nlev)
+    pressure        =  np.zeros(nlev)
+    temperature[0]  =  300.0
+    pressure[0]     =  100000.0
+    for zz in range(1,nlev):
+        temperature[zz] = temperature[zz-1]  +  dry_lapse*(height[zz]-height[zz-1])
+        dz              = height[zz]-height[zz-1]
+        Tavg            = 0.5*(temperature[zz]+temperature[zz-1])
+        pressure   [zz] = pressure[zz-1] * np.exp( -(grav*dz)/(R*Tavg) )
+
+    pblp              =  93000.
+    ipbl              =  maxindex(1,np.where(pressure >= pblp,True,False))
+    pbl_energy        =  column_energy(temperature[0:ipbl],pressure[0:ipbl],missing)
+    constructed_temp  =  reconstruct_pbl_temperature(temperature,height,pressure,pbl_energy,ipbl,missing)
+    absolute_error    =  constructed_temp - temperature
+    percent_error     =  np.abs( absolute_error / temperature ) * 1e2
+    assert all(absolute_error <= 0.1 )
+    assert all(percent_error  <= 0.05)
+
+
+    pblp              =  99904.7995543
+    ipbl              =  maxindex(1,np.where(pressure >= pblp,True,False))
+    pbl_energy        =  column_energy(temperature[0:ipbl],pressure[0:ipbl],missing)
+    constructed_temp  =  reconstruct_pbl_temperature(temperature,height,pressure,pbl_energy,ipbl,missing)
+    absolute_error    =  constructed_temp - temperature
+    percent_error     =  np.abs( absolute_error / temperature ) * 1e2
+    assert all(absolute_error <= 0.1 )
+    assert all(percent_error  <= 0.05)
+
+
+
+
+
+'''
+Test Hi-resoluation real-world PBL from
+Craig Enhanced Sounding Data
+'''
+def test_hi_res_add_sensible_heat():
+    missing         =  -99999.
+    theta           =  np.linspace(0,10,11) + 1
+    dt              =  1.0
+    sensible_heat   =  1.0
+    pbl_depth       =  9.81/1005.7
+    newT            =  add_sensible_heat (theta[0], sensible_heat, pbl_depth, dt, missing )
+    assert newT == 2 
+
+
+
+
+
 '''
 nlev         =  4
 missing      =  -99999.
@@ -360,23 +425,14 @@ Code not test yet:
 
 
 
-'''
-Test Hi-resoluation real-world PBL from
-Craig Enhanced Sounding Data
-'''
-def test_hi_res_add_sensible_heat():
-    missing         =  -99999.
-    temperature     =  np.linspace(0,10,11)
-    height          =  np.linspace(0,10,11)
-    theta           =  potentialtemperature(temperature, pressure, missing)
-    pblh            =  3.0
-    dt              =  1.0
-    sensible_heat   =  20.0
-    pbl_depth       =  2048.929664
-    newT            =  add_sensible_heat (temperature, sensible_heat, pbl_depth, height, pblh, dt, missing )
 
-    assert pblp >= bounds[t][0] and pblp <= bounds[t][1]
-
+'''
+missing         =  -99999.
+theta           =  np.linspace(0,10,11) + 1
+dt              =  1.0
+sensible_heat   =  1.0
+pbl_depth       =  9.81/1005.7
+newT            =  add_sensible_heat (theta[0], sensible_heat, pbl_depth, dt, missing )
 
 
 missing         =  -99999.
@@ -389,7 +445,7 @@ dt              =  1.0
 sensible_heat   =  20.0
 pbl_depth       =  0.1950879984
 newT            =  add_sensible_heat (temperature, sensible_heat, pbl_depth, height, pblh, dt, missing )
-
+'''
 
 
 
@@ -441,13 +497,66 @@ def test_PBL_missing_value():
 
 
 '''
-df           =  pd.read_csv(test_files[t])
-pressure     =  df["Pressure"]
-temperature  =  df["Temperature"]
-height       =  df["Height"]
-nlev         =  df.shape[0]
-missing      =  -99999.
-theta        =  potentialtemperature(temperature, pressure, missing)
+import numpy as np
+import numpy.ma as ma
+import pandas as pd
+import sys
+from HandyMet import *
+
+from matplotlib import pyplot as plt
+from matplotlib import colors
+from matplotlib import pylab
+from matplotlib import style
+from matplotlib import animation
+import matplotlib.cm as cm
+from pylab import savefig, figure
+style.use('fivethirtyeight')
+
+dt              =  3 * 3600.0
+sensible_heat   =  700.0
+
+test_file       =  './test_data/Hi_res_test_profile.20150815.203000.csv'
+df              =  pd.read_csv(test_file)
+pressure        =  df["Pressure"]
+temperature     =  df["Temperature"]
+height          =  df["Height"]
+nlev            =  df.shape[0]
+missing         =  -99999.
+theta           =  potentialtemperature(temperature, pressure, missing)
+pblp,pblt,pblh  =  pbl_gradient(missing,theta,pressure,height)
+ilower          =  maxindex(1, np.where( pressure>=pblp, True, False) )
+pbl_energy      =  column_energy(temperature[:ilower],pressure[:ilower],missing)
+new_pbl_energy  =  add_sensible_heat_energy(pbl_energy,sensible_heat,dt,missing)
+dp              =  depthpressure(pressure, missing)
+new_temperature = reconstruct_pbl_temperature(temperature,height,dp,pbl_energy,ilower,missing)
+add_temperature = reconstruct_pbl_temperature(temperature,height,dp,new_pbl_energy,ilower,missing)
+
+theta           =  potentialtemperature(    temperature, pressure, missing)
+comp_theta      =  potentialtemperature(new_temperature, pressure, missing)
+add_theta       =  potentialtemperature(add_temperature, pressure, missing)
+
+avg_T  =  np.avg(temperature[:ilower])
+newT   =  np.array( [ avg_T - (g_cp * (height[zz]-(0.5 * (height[ilower] + height[0])))) if zz < ilower else temperature[zz] for zz in range(0,len(height)) ] )
+
+f, ax1 = plt.subplots(1,1)
+ax1.plot(comp_theta, height/1e3, '-k')
+ax1.plot(     theta, height/1e3, 'ob')
+ax1.plot( add_theta, height/1e3, 'or')
+ax1.set_ylim([0,3])
+ax1.set_xlim([280,320])
+plt.show()
+
+
+f, ax1 = plt.subplots(1,1)
+ax1.plot(new_temperature, height/1e3, '-k')
+ax1.plot(    temperature, height/1e3, 'ob')
+ax1.plot(add_temperature, height/1e3, 'or')
+ax1.plot( newT          , height/1e3, 'ow')
+ax1.set_ylim([0,3])
+ax1.set_xlim([280,310])
+plt.show()
+
+
 dtdp         =  smoothed_lapse_rate(theta,pressure,missing)
 f, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True)
 ax1.plot(theta         , pressure/1e2         , '-k')
