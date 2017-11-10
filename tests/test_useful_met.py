@@ -280,7 +280,7 @@ def test_inject_moisture():
     pressure     =  np.array( [100000, 99901.9, 95000, 80000] )
     flux_in      =  1.0
     dp           =  depthpressure(pressure, missing)
-    mixedprofile =  inject_and_mix(mixLevel,flux_in,pressure,mixing_ratio,dp,missing)
+    mixedprofile =  inject_lh_into_pbl(mixLevel,flux_in,pressure,mixing_ratio,missing)
     assert mixedprofile[0] == pytest.approx(0.2, 0.0001)
     assert all(mixedprofile[1:] == 0.1)
 
@@ -318,6 +318,7 @@ Test to see if when given an atmospheric profile of temperature,
 the code can return a PBL energy [J/m2] and then reconstruct the original
 temperature profile.  This shows the integration works and no info is lost
 during the transform.
+----reconstruct_temperature----
 '''
 def test_pbl_energy_temp_reconstruction():
     nlev            =  300
@@ -326,6 +327,8 @@ def test_pbl_energy_temp_reconstruction():
     cp              =  1005.7
     dry_lapse       =  -grav/cp
     missing         =  -99999.
+    sensible        =  0.0
+    dt              =  60. * 10.
     height          =  np.linspace(0,5,nlev) * 1e3
     temperature     =  np.zeros(nlev)
     pressure        =  np.zeros(nlev)
@@ -336,21 +339,18 @@ def test_pbl_energy_temp_reconstruction():
         dz              = height[zz]-height[zz-1]
         Tavg            = 0.5*(temperature[zz]+temperature[zz-1])
         pressure   [zz] = pressure[zz-1] * np.exp( -(grav*dz)/(R*Tavg) )
-
+ 
+    # Try a medium height boundary layer
     pblp              =  93000.
-    ipbl              =  maxindex(1,np.where(pressure >= pblp,True,False))
-    pbl_energy        =  column_energy(temperature[0:ipbl],pressure[0:ipbl],missing)
-    constructed_temp  =  reconstruct_pbl_temperature(temperature,height,pressure,pbl_energy,ipbl,missing)
+    constructed_temp  =  get_new_pbl_by_adding_sh(temperature,pressure,height,pblp,sensible,dt,missing)
     absolute_error    =  constructed_temp - temperature
     percent_error     =  np.abs( absolute_error / temperature ) * 1e2
     assert all(absolute_error <= 0.1 )
     assert all(percent_error  <= 0.05)
 
-
+    # Try a boundary layer within the 1st model layer
     pblp              =  99904.7995543
-    ipbl              =  maxindex(1,np.where(pressure >= pblp,True,False))
-    pbl_energy        =  column_energy(temperature[0:ipbl],pressure[0:ipbl],missing)
-    constructed_temp  =  reconstruct_pbl_temperature(temperature,height,pressure,pbl_energy,ipbl,missing)
+    constructed_temp  =  get_new_pbl_by_adding_sh(temperature,pressure,height,pblp,sensible,dt,missing)
     absolute_error    =  constructed_temp - temperature
     percent_error     =  np.abs( absolute_error / temperature ) * 1e2
     assert all(absolute_error <= 0.1 )
@@ -358,20 +358,54 @@ def test_pbl_energy_temp_reconstruction():
 
 
 
+
+
+
+'''
+python
+import numpy as np
+from HandyMet import *
+
+nlev            =  300
+R               =  287.
+grav            =  9.81
+cp              =  1005.7
+dry_lapse       =  -grav/cp
+missing         =  -99999.
+height          =  np.linspace(0,5,nlev) * 1e3
+temperature     =  np.zeros(nlev)
+pressure        =  np.zeros(nlev)
+temperature[0]  =  300.0
+pressure[0]     =  100000.0
+for zz in range(1,nlev):
+    temperature[zz] = temperature[zz-1]  +  dry_lapse*(height[zz]-height[zz-1])
+    dz              = height[zz]-height[zz-1]
+    Tavg            = 0.5*(temperature[zz]+temperature[zz-1])
+    pressure   [zz] = pressure[zz-1] * np.exp( -(grav*dz)/(R*Tavg) )
+
+#pblp              =  99904.7995543
+pblp              =  93000.
+dp                =  depthpressure(pressure,missing)
+constructed_temp  =  reconstruct_temperature(temperature,pressure,height,pblp,missing)
+absolute_error    =  constructed_temp - temperature
+percent_error     =  np.abs( absolute_error / temperature ) * 1e2
+
+'''
+#pressure, pblp, temperature, height
 
 
 '''
 Test Hi-resoluation real-world PBL from
 Craig Enhanced Sounding Data
 '''
-def test_hi_res_add_sensible_heat():
-    missing         =  -99999.
-    theta           =  np.linspace(0,10,11) + 1
-    dt              =  1.0
-    sensible_heat   =  1.0
-    pbl_depth       =  9.81/1005.7
-    newT            =  add_sensible_heat (theta[0], sensible_heat, pbl_depth, dt, missing )
-    assert newT == 2 
+#def test_hi_res_add_sensible_heat():
+#    missing         =  -99999.
+#    theta           =  np.linspace(0,10,11) + 1
+#    dt              =  1.0
+#    sensible_heat   =  1.0
+#    pbl_depth       =  9.81/1005.7
+#    newT            =  add_sensible_heat (theta[0], sensible_heat, pbl_depth, dt, missing )
+#    assert newT == 2 
 
 
 
@@ -493,6 +527,51 @@ def test_PBL_missing_value():
     pblp,pblt,pblh  =  pblheat                      (missing    ,theta   ,pressure,height)
     assert pblt == 322.5
 '''
+
+
+
+
+python
+import numpy as np
+import pandas as pd
+import sys
+from HandyMet import *
+
+from matplotlib import pyplot as plt
+from matplotlib import colors
+from matplotlib import pylab
+from matplotlib import style
+from matplotlib import animation
+import matplotlib.cm as cm
+from pylab import savefig, figure
+style.use('fivethirtyeight')
+
+
+test_file       =  './test_data/Hi_res_test_profile.20150815.113000.csv'
+df              =  pd.read_csv(test_file)
+pressure        =  df["Pressure"]
+temperature     =  df["Temperature"]
+height          =  df["Height"]
+qhum            =  df["Spc Humidity"]
+nlev            =  df.shape[0]
+missing         =  -99999.
+dt              =  60. * 10.
+
+sensible        =  600.0
+latent          =  0.0
+original_theta  =  potentialtemperature(temperature, pressure, missing)
+pblp,pblt,pblh  =  pbl_gradient(missing,original_theta,pressure,height)
+
+new_T,new_Q,new_pblp  =  add_surface_fluxes(temperature,height,pressure,qhum,pblp,sensible,latent,dt,missing)
+new_theta             =  potentialtemperature(new_T, pressure, missing)
+
+old_energy  =  column_energy(temperature,pressure,missing)
+new_energy  =  column_energy(new_T      ,pressure,missing)
+
+plt.plot(original_theta,height/1e3,'xk')
+plt.plot(new_theta     ,height/1e3,'or')
+#plt.plot(newTHETA      ,height/1e3,'--b')
+plt.show()
 
 
 

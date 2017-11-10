@@ -264,7 +264,7 @@ subroutine Evaluate_CI_plevels( T   , Q   , P        , omega , itime            
             !-----------------------------------------------------------------------------
             !----- inject into the boundary layer -- NOTE returns humidity as kg/m2
             !-----------------------------------------------------------------------------
-            call inject_and_mix( pblp, evap, ppack, qpack, dpress, nlev1, missing, newQhum )
+!            call inject_and_mix( pblp, evap, ppack, qpack, dpress, nlev1, missing, newQhum )
             qpack  =  newQhum
 
             !-----------------------------------------------------------------------------
@@ -520,37 +520,6 @@ end subroutine weighted_avg
 
 
 
-
-
-
-!----------------------------------------------------------------------------------------------
-!
-! function: Add sensible heat to the average PBL potential temperature 
-!           In general and for the purposes of this model the potential temp is the same across the PBL
-!          (note that next will be to reconstruct the PBL profile using the dry adiabatic lapse rate)
-!
-!----------------------------------------------------------------------------------------------
-subroutine add_sensible_heat (Theta_pbl_initial, sensible_heat, pblp_depth, dt, missing, Theta_pbl_final )
-
-      real(4), intent(in )  ::  Theta_pbl_initial   !*** average PBL potential temperature
-      real(4), intent(in )  ::  sensible_heat , dt  !*** sensible heat flux and time step
-      real(4), intent(in )  ::  pblp_depth          !*** pbl depth in pressure units [Pa]
-      real(4), intent(in )  ::  missing             !*** missing values
-      real(4), intent(out)  ::  Theta_pbl_final     !*** average PBL potential temperautre after heat added
-      real(4), parameter    ::  grav = 9.81, cp = 1005.7, cp_g = cp/grav
-
-      if( Theta_pbl_initial.ne.missing .and. pblp_depth.ne.missing .and. sensible_heat.ne.missing ) then
-         Theta_pbl_final =  Theta_pbl_initial + (dt * (sensible_heat / (pblp_depth*cp_g)))
-      end if
-
-end subroutine add_sensible_heat
-
-
-
-
-
-
-
 !----------------------------------------------------------------------------------------------
 !
 ! function: Add sensible heat to the average PBL potential temperature 
@@ -565,6 +534,7 @@ subroutine add_sensible_heat_energy (pbl_energy, sensible_heat, dt, missing, new
       real(4), intent(in )  ::  missing             !*** missing values
       real(4), intent(out)  ::  new_pbl_energy      !*** new integrated PBL energy [J/m2]
 
+      new_pbl_energy  =  pbl_energy
       if( pbl_energy.ne.missing  .and.  sensible_heat.ne.missing ) then
          new_pbl_energy  =  pbl_energy + (dt * sensible_heat)
       end if
@@ -573,42 +543,69 @@ end subroutine add_sensible_heat_energy
 
 
 
-!----------------------------------------------------------------------------------------------
-!
-! function: Get column energy
-!
-!----------------------------------------------------------------------------------------------
-subroutine find_theta_intersect (temperature, pressure, height, pblp, nlev, missing, new_temperature)
 
-      integer, intent(in )  ::  nlev                !*** # of atmospheric levels
-      real(4), intent(in )  ::  temperature(nlev)   !*** temperature profile [K]
-      real(4), intent(in )  ::  pressure   (nlev)   !*** pressure profile [K]
-      real(4), intent(in )  ::  height     (nlev)   !*** height profile [m]      
-      real(4), intent(in )  ::  pblp                !*** pressure at top of pbl [Pa]
-      real(4), intent(in )  ::  missing             !*** missing values
-      real(4), intent(out)  ::  new_temperature(nlev)     !*** average PBL potential temperautre after heat added
+!----------------------------------------------------------------------------------------------
+!
+! function: Get the new temperature profile after adding surface sensible heat flux
+!
+!----------------------------------------------------------------------------------------------
+subroutine get_new_pbl_by_adding_sh (temperature, pressure, height, pblp, sensible_heat, dt, nlev, missing, new_temperature)
+
+      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+      real(4), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(4), intent(in )  ::  pressure   (nlev)      !*** pressure profile [K]
+      real(4), intent(in )  ::  height     (nlev)      !*** height profile [m]      
+      real(4), intent(in )  ::  pblp                   !*** pressure at top of pbl [Pa]
+      real(4), intent(in )  ::  sensible_heat          !*** surface sensible heat flux [W/m2]
+      real(4), intent(in )  ::  dt                     !*** model timestep in seconds [s]
+      real(4), intent(in )  ::  missing                !*** missing values
+      real(4), intent(out)  ::  new_temperature(nlev)  !*** average PBL potential temperautre after heat added
       real(4), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp
 
-      integer               ::  ilower
-      real(4)               ::  pbl_energy, dp(nlev) !, new_temperature(nlev)
+      integer               ::  ipbl
+      real(4)               ::  pbl_energy, pbl_depth, new_pbl_energy, theta_pbl
+      real(4)               ::  theta(nlev), dp(nlev)
 
       !-----------------------------------------------------------------------------
-      !-- Return indices where the PBL is
+      !-- Return indices where the PBL is -> check if pbl is within first layer
+      !-- if so then assure that the index selects the 2nd layer to avoid integration
+      !-- over nothing and returning a pbl_energy = 0; Note this will "mix" the 1st
+      !-- layer automatically
       !-----------------------------------------------------------------------------
-      call maxIndex      (nlev , 1, (pressure.ne.missing .and. pressure.ge.pblp), ilower )
-      call column_energy (temperature(:ilower), pressure(:ilower), nlev, missing, pbl_energy )
       call depthPressure (pressure, nlev, missing, dp)
-
-
-     call reconstruct_pbl_temperature( temperature, height, pressure, pbl_energy, ilower, nlev, missing, new_temperature )
+      call sumIt         (nlev , 1, (pressure.ne.missing .and. pressure.ge.pblp), dp, pbl_depth  )
+      call maxIndex      (nlev , 1, (pressure.ne.missing .and. pressure.ge.pblp), ipbl )
+      pbl_depth  =  pressure(1) - pressure(ipbl)
+      call column_energy (temperature(:ipbl), pressure(:ipbl), size(pressure(:ipbl)), missing, pbl_energy )
 
       !-----------------------------------------------------------------------------
-      !-- Return indices where the PBL is
+      !-- Add sensible heat flux to the integrated boundary layer energy
       !-----------------------------------------------------------------------------
-end subroutine find_theta_intersect
+      call add_sensible_heat_energy   ( pbl_energy , sensible_heat, dt, missing, new_pbl_energy )
+
+      !-----------------------------------------------------------------------------
+      !-- Reconstruct the temperature profile given the integrated PBL energy
+      !-----------------------------------------------------------------------------
+      call reconstruct_pbl_temperature( temperature, height, new_pbl_energy, pbl_depth, ipbl, nlev, missing, new_temperature )
 
 
+      !-----------------------------------------------------------------------------
+      !-- Find where the new PBL potential temperature intersects the profile
+      !-----------------------------------------------------------------------------
+      call potentialTemperature(temperature, pressure, nlev, missing, theta)
+      theta_pbl   =   sum(theta(:ipbl), mask = theta(:ipbl).ne.missing) / count(theta(:ipbl).ne.missing)
+      call maxIndex            (nlev , 1, (theta.ne.missing .and. theta_pbl.gt.theta), ipbl )
 
+      !-----------------------------------------------------------------------------
+      !-- Use the new boundary layer depth to calculate a new energy extending through
+      !-- boundary; finally reconstruct the temperature profile again
+      !-----------------------------------------------------------------------------
+      pbl_depth  =  pressure(1) - pressure(ipbl)
+      call column_energy              ( temperature(:ipbl), pressure(:ipbl), size(pressure(:ipbl)), missing, pbl_energy )
+      call reconstruct_pbl_temperature( temperature, height, new_pbl_energy, pbl_depth, ipbl, nlev, missing, new_temperature )
+
+
+end subroutine get_new_pbl_by_adding_sh
 
 
 
@@ -618,121 +615,40 @@ end subroutine find_theta_intersect
 !
 ! function: Reconstruct the temperature profile within the boundary layer using the average PBL 
 !           temperature and depth of the boundary layer assuming a dry adiabatic profile
-!           This function is used in conjunction with the add_sensible_heat subroutine
+!           This function is used in conjunction with the add_sensible_heat_energy subroutine
 !
 !----------------------------------------------------------------------------------------------
-subroutine reconstruct_pbl_temperature( temperature, height, pressure, pbl_energy, ipbl, nlev, missing, new_temperature )
+subroutine reconstruct_pbl_temperature( temperature, height, pbl_energy, pbl_depth, ipbl, nlev, missing, new_temperature )
 
       real(4), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
       real(4), intent(in )  ::  height     (nlev)      !*** height above ground profile [m]
-      real(4), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
       real(4), intent(in )  ::  pbl_energy             !*** integrated PBL energy [J/m2]
+      real(4), intent(in )  ::  pbl_depth              !*** PBL depth in pressure units [Pa]
       integer, intent(in )  ::  ipbl                   !*** index of PBL height
       real(4), intent(in )  ::  missing                !*** missing value
       real(4), intent(out)  ::  new_temperature(nlev)  !*** new temperature profile [K]
       real(4), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp
 
-      real(4)               ::  total_layer, avg_temperature, avg_height
+      real(4)               ::  avg_temperature, avg_height
 
+
+      !-----------------------------------------------------------------------------
+      !-- Initialize output variable and return of PBL is within the first layer
+      !-----------------------------------------------------------------------------
       new_temperature  =  temperature
-!      total_layer      =  sum( dp(:ipbl), mask = dp(:ipbl).ne.missing )
-      total_layer      =  pressure(1) - pressure(ipbl)
-!!!EDGE CASE OF TOTAL_LAYER = ZERO!!!!!!!
-      avg_temperature  =  g_cp * pbl_energy / total_layer
+      if( ipbl.eq.1 ) return
+
+      !-----------------------------------------------------------------------------
+      !-- Mix the temperature profile within the boundary making it dry adiabatic
+      !-----------------------------------------------------------------------------
+      !total_layer      =  pressure(1) - pressure(ipbl)
+      avg_temperature  =  g_cp * pbl_energy / pbl_depth
       avg_height       =  0.5 * (height(ipbl) + height(1))
       where( height(:ipbl).ne.missing )
          new_temperature(:ipbl)  =  avg_temperature - (g_cp * (height(:ipbl) - avg_height)) 
       end where
 
 end subroutine reconstruct_pbl_temperature
-
-
-
-
-
-
-
-!----------------------------------------------------------------------------------------------
-!
-! function: Reconstruct the temperature profile within the boundary layer using the average PBL 
-!           temperature and depth of the boundary layer assuming a dry adiabatic profile
-!           This function is used in conjunction with the add_sensible_heat subroutine
-!
-!----------------------------------------------------------------------------------------------
-!subroutine reconstruct_pbl_temperature( temperature, height, dp, pbl_energy, ipbl, nlev, missing, new_temperature )
-!
-!      real(4), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
-!      real(4), intent(in )  ::  height     (nlev)      !*** height above ground profile [m]
-!      real(4), intent(in )  ::  dp         (nlev)      !*** depth of pressure layers [Pa]
-!      real(4), intent(in )  ::  pbl_energy             !*** integrated PBL energy [J/m2]
-!      integer, intent(in )  ::  ipbl                   !*** index of PBL height
-!      real(4), intent(in )  ::  missing                !*** missing value
-!      real(4), intent(out)  ::  new_temperature(nlev)  !*** new temperature profile [K]
-!      real(4), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp, cp_g = cp/grav
-!
-!      real(4)               ::  total_layer, avg_temperature, avg_height
-!
-!      new_temperature  =  temperature
-!      total_layer      =  sum( dp(:ipbl), mask = dp(:ipbl).ne.missing )
-!      avg_temperature  =  g_cp * pbl_energy / total_layer
-!      avg_height       =  0.5 * (height(ipbl) + height(1))
-!      where( height(:ipbl).ne.missing )
-!         new_temperature(:ipbl)  =  avg_temperature - (g_cp * (height(:ipbl) - avg_height)) 
-!      end where
-!
-!end subroutine reconstruct_pbl_temperature
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-!----------------------------------------------------------------------------------------------
-!
-! function: Works in concert with the add_sensible_heat subroutine.  Once the heat is added
-!           then find the height where the NEW pbl theta intersects the profile
-!
-!----------------------------------------------------------------------------------------------
-!subroutine find_theta_intersect (Theta_pbl, pblp_depth, dt, missing, Theta_pbl_final )
-!
-!      real(4), intent(in )  ::  Theta_pbl           !*** average PBL potential temperature
-!      real(4), intent(in )  ::  Theta(nlev)         !*** potential temperature profile [K]
-!      real(4), intent(in )  ::  pblp_depth          !*** pbl depth in pressure units [Pa]
-!      real(4), intent(in )  ::  missing             !*** missing values
-!      real(4), intent(out)  ::  Theta_pbl_final     !*** average PBL potential temperautre after heat added
-!      real(4), parameter    ::  grav = 9.81, cp = 1005.7, cp_g = cp/grav
-!
-!      real(4)   ::  theta_diff(nlev)
-!
-!      theta_diff  =  missing
-!      where( Theta_pbl.ne.missing .and. Theta.ne.missing ) theta_diff  =  Theta_pbl  -  Theta
-!
-!end subroutine find_theta_intersect
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1454,21 +1370,20 @@ end subroutine inject_moisture
 !-----------------------------------------------------------------------------
 ! function: Inject latent heat flux across the mixed layer [kg/m2]
 !-----------------------------------------------------------------------------
-subroutine inject_and_mix( mixLevel, injection, press, tracer, dpress, nlev, missing, MixedProfile )
+subroutine inject_lh_into_pbl( mixLevel, injection, pressure, tracer, nlev, missing, MixedProfile )
 
       integer, intent(in )  ::  nlev
       real(4), intent(in )  ::  missing
       real(4), intent(in )  ::  injection           !*** amount of tracer to be injected [kg/m2]
       real(4), intent(in )  ::  mixLevel            !*** Pressure of level to mix down from [Pa]
       real(4), intent(in )  ::  tracer(nlev)        !*** tracer to be mixed assuming units of [kg/kg]
-      real(4), intent(in )  ::  dpress(nlev)        !*** depth of each pressure level [Pa]
-      real(4), intent(in )  ::  press (nlev)        !*** pressure levels [Pa]
+      real(4), intent(in )  ::  pressure(nlev)      !*** pressure levels [Pa]
       real(4), intent(out)  ::  MixedProfile(nlev)  !*** return mixed tracer profile [kg/kg]
 
       integer  ::  zz, ilayer_top
       real(4)  ::  ilevel(nlev), layer_depth
       real(4)  ::  tracer_density(nlev), air_density(nlev), tracer_density_w_flux(nlev)
-      real(4)  ::  tracer_mix          , air_mix
+      real(4)  ::  tracer_mix          , air_mix, dpress(nlev)
 
 
 
@@ -1483,8 +1398,9 @@ subroutine inject_and_mix( mixLevel, injection, press, tracer, dpress, nlev, mis
       !-----------------------------------------------------
       !--------  Return column density
       !-----------------------------------------------------
-      call columnDensity     (tracer,dpress,nlev,missing,tracer_density)
-      call columnDensityNoMix(       dpress,nlev,missing,   air_density)
+      call depthPressure     (pressure     , nlev, missing, dpress        )
+      call columnDensity     (tracer,dpress, nlev, missing, tracer_density)
+      call columnDensityNoMix(       dpress, nlev, missing, air_density   )
 
 
       !-----------------------------------------------------
@@ -1498,9 +1414,9 @@ subroutine inject_and_mix( mixLevel, injection, press, tracer, dpress, nlev, mis
       !-----------------------------------------------------
       !--------  Are there levels within the mixed layer?
       !-----------------------------------------------------
-      call maxIndex ( nlev, 1, (press.gt.mixLevel  .and.  press.ne.missing)        , ilayer_top   )
-      call sumIt    ( nlev, 1, (press.gt.mixLevel  .and.  press.ne.missing), dpress, layer_depth  )
-
+      call maxIndex ( nlev, 1, (pressure.gt.mixLevel  .and.  pressure.ne.missing)        , ilayer_top   )
+      call sumIt    ( nlev, 1, (pressure.gt.mixLevel  .and.  pressure.ne.missing), dpress, layer_depth  )
+      
 
       !*********************************************************************
       !**** Inject only when latent heat is greater than zero
@@ -1519,7 +1435,7 @@ subroutine inject_and_mix( mixLevel, injection, press, tracer, dpress, nlev, mis
       !--------------------------
       !---  Inject moisture
       !--------------------------
-      call inject_moisture( tracer_density, injection, mixLevel, press, dpress, layer_depth, nlev, missing, &
+      call inject_moisture( tracer_density, injection, mixLevel, pressure, dpress, layer_depth, nlev, missing, &
                             tracer_density_w_flux )
 
 
@@ -1533,7 +1449,7 @@ subroutine inject_and_mix( mixLevel, injection, press, tracer, dpress, nlev, mis
       end if
 
 
-end subroutine inject_and_mix
+end subroutine inject_lh_into_pbl
 
 
 
@@ -1564,8 +1480,8 @@ subroutine column_energy (temperature, pressure, nlev, missing, internal_energy 
 
       internal_energy  =  sum( 0.5  * (temperature(:nlev1) + temperature(2:nlev)) *                                 & 
                                cp_g * (pressure   (:nlev1) - pressure   (2:nlev))  ,                                &
-                               mask= (temperature(:nlev1).ne.missing .and. temperature(2:nlev).ne.missing  .and.    &
-                                      pressure   (:nlev1).ne.missing .and. pressure   (2:nlev).ne.missing         ) )
+                               mask = (temperature(:nlev1).ne.missing .and. temperature(2:nlev).ne.missing  .and.    &
+                                       pressure   (:nlev1).ne.missing .and. pressure   (2:nlev).ne.missing         ) )
 
 end subroutine column_energy
 
@@ -2117,218 +2033,6 @@ end subroutine hcfcalc
 
 
 
-!------------------------------------------------------------------------   
-!------------------------------------------------------------------------    
-
-subroutine int2p(PPIN,XXIN,NPIN,PPOUT,XXOUT,NPOUT,LINLOG,XMSG)
-    implicit none
-
-! routine to interpolate from one set of pressure levels                     
-! .   to another set  using linear or ln(p) interpolation                    
-!                                                                            
-! NCL: xout = int2p (pin,xin,pout,linlog)                                    
-!                                                                            
-! This code was originally written for a specific purpose.                   
-!    Several features were added for incorporation into NCL's                
-!    function suite including linear extrapolation.                          
-!                                                                            
-! nomenclature:                                                              
-!                                                                            
-!    ppin   - input pressure levels. The pin can be                          
-!             be in ascending or descending order                            
-!    xxin   - data at corresponding input pressure levels                    
-!    npin   - number of input pressure levels >= 2                           
-!    ppout  - output pressure levels (input by user)                         
-!             same (ascending or descending) order as pin                    
-!    xxout  - data at corresponding output pressure levels                   
-!    npout  - number of output pressure levels                               
-!    linlog - if abs(linlog)=1 use linear interp in pressure                 
-!             if abs(linlog) anything but =1 linear interp in                
-!                 ln(pressure)                                               
-!             If the value is negative then the routine will                 
-!             extrapolate. Be wary of results in this case.                  
-!    xmsg   - missing data code. if none, set to some number                 
-!             which will not be encountered (e.g., 1.e+36)                   
-!    ier    - error code                                                     
-
-      ! input types                                                          
-      integer, intent(in ) :: NPIN,NPOUT,LINLOG
-      real(4), intent(in ) :: PPIN(NPIN),XXIN(NPIN),PPOUT(NPOUT),XMSG
-      ! output                                                               
-      real(4), intent(out) :: XXOUT(NPOUT)
-
-      ! local                                                                
-      integer :: NP,NL,NLMAX,NLSAVE,NP1,NO1,N1,N2,LOGLIN,NLSTRT
-      real(4) :: SLOPE,PA,PB,PC
-
-      ! automatic arrays                                                                                                                  
-      real(4) :: PIN(NPIN),XIN(NPIN),P(NPIN),X(NPIN)
-      real(4) :: POUT(NPOUT),XOUT(NPOUT)
-
-      ! error code
-      integer :: IER
-
-!------------------------------------------------------------------------    
-
-
-      ! error check: enough points: pressures consistency?                   
-      LOGLIN = ABS(LINLOG)
-      IER = 0
-      IF (NPOUT.GT.0) THEN
-          DO NP = 1,NPOUT
-              XXOUT(NP) = XMSG
-          END DO
-      END IF
-
-      IF (NPIN.LT.2 .OR. NPOUT.LT.1) IER = IER + 1
-
-      IF (IER.NE.0) THEN
-          RETURN
-      END IF
-
-      ! should input arrays be reordered: want p(1) > p(2) > p(3) etc        
-      ! so that it will match order for which code was originally designed   
-      ! copy to local arrays                                                 
-      NP1 = 0
-      NO1 = 0
-      IF (PPIN(1).LT.PPIN(2)) THEN
-          NP1 = NPIN + 1
-          NO1 = NPOUT + 1
-      END IF
-
-      DO NP = 1,NPIN
-          PIN(NP) = PPIN(ABS(NP1-NP))
-          XIN(NP) = XXIN(ABS(NP1-NP))
-      END DO
-
-      DO NP = 1,NPOUT
-          POUT(NP) = PPOUT(ABS(NO1-NP))
-      END DO
-      !                                                                      
-      ! eliminate levels with missing data. This can easily                  
-      ! .   happen with observational data.                                  
-      !                                                                      
-      NL = 0
-      DO NP = 1,NPIN
-          IF (XIN(NP).NE.XMSG .AND. PIN(NP).NE.XMSG) THEN
-              NL = NL + 1
-              P(NL) = PIN(NP)
-              X(NL) = XIN(NP)
-          END IF
-      END DO
-      NLMAX = NL
-      ! all missing data                                                                                                                  
-      IF (NLMAX.LT.2) THEN
-          IER = IER + 1000
-          RETURN
-      END IF
-
-
-      ! ===============> pressure in decreasing order <================      
-      ! perform the interpolation  [pin(1)>pin(2)>...>pin(npin)]             
-      !                                                      ( p ,x)         
-      ! ------------------------- p(nl+1), x(nl+1)   example (200,5)         
-      ! .                                                                    
-      ! ------------------------- pout(np), xout(np)         (250,?)         
-      ! .                                                                    
-      ! ------------------------- p(nl)  , x(nl)             (300,10)        
-      ! exact p-level matches                                                
-      NLSTRT = 1
-      NLSAVE = 1
-      DO NP = 1,NPOUT
-          XOUT(NP) = XMSG
-          DO NL = NLSTRT,NLMAX
-              IF (POUT(NP).EQ.P(NL)) THEN
-                  XOUT(NP) = X(NL)
-                  NLSAVE = NL + 1
-                  GO TO 10
-              END IF
-          END DO
-   10     NLSTRT = NLSAVE
-      END DO
-
-      IF (LOGLIN.EQ.1) THEN
-          DO NP = 1,NPOUT
-              DO NL = 1,NLMAX - 1
-                  IF (POUT(NP).LT.P(NL) .AND. POUT(NP).GT.P(NL+1)) THEN
-                      SLOPE = (X(NL)-X(NL+1))/ (P(NL)-P(NL+1))
-                      XOUT(NP) = X(NL+1) + SLOPE* (POUT(NP)-P(NL+1))
-                  END IF
-              END DO
-          END DO
-      ELSE
-          DO NP = 1,NPOUT
-              DO NL = 1,NLMAX - 1
-                  IF (POUT(NP).LT.P(NL) .AND. POUT(NP).GT.P(NL+1)) THEN
-                      PA = LOG(P(NL))
-                      PB = LOG(POUT(NP))
-                      ! special case: In case someome inadvertently enter p=0
-                      if (p(nl+1).gt.0.d0) then
-                          PC = LOG(P(NL+1))
-                      else
-                          PC = LOG(1.d-4)
-                      end if
-
-                      SLOPE = (X(NL)-X(NL+1))/ (PA-PC)
-                      XOUT(NP) = X(NL+1) + SLOPE* (PB-PC)
-                  END IF
-              END DO
-          END DO
-      END IF
-
-      ! extrapolate?                                   
-      ! . use the 'last' valid slope for extrapolating 
-      IF (LINLOG.LT.0) THEN
-          DO NP = 1,NPOUT
-              DO NL = 1,NLMAX
-                  IF (POUT(NP).GT.P(1)) THEN
-                      IF (LOGLIN.EQ.1) THEN
-                          SLOPE = (X(2)-X(1))/ (P(2)-P(1))
-                          XOUT(NP) = X(1) + SLOPE* (POUT(NP)-P(1))
-                      ELSE
-                          PA = LOG(P(2))
-                          PB = LOG(POUT(NP))
-                          PC = LOG(P(1))
-                          SLOPE = (X(2)-X(1))/ (PA-PC)
-                          XOUT(NP) = X(1) + SLOPE* (PB-PC)
-                      END IF
-                  ELSE IF (POUT(NP).LT.P(NLMAX)) THEN
-                      N1 = NLMAX
-                      N2 = NLMAX - 1
-                      IF (LOGLIN.EQ.1) THEN
-                          SLOPE = (X(N1)-X(N2))/ (P(N1)-P(N2))
-                          XOUT(NP) = X(N1) + SLOPE* (POUT(NP)-P(N1))
-                      ELSE
-                          PA = LOG(P(N1))
-                          PB = LOG(POUT(NP))
-                          PC = LOG(P(N2))
-                          SLOPE = (X(N1)-X(N2))/ (PA-PC)
-                          XOUT(NP) = X(N1) + SLOPE* (PB-PC)
-                      END IF
-                  END IF
-              END DO
-          END DO
-      END IF
-
-      ! place results in the return array;    
-      ! .   reverse to original order         
-
-      DO NP = 1,NPOUT
-          XXOUT(NP) = XOUT(ABS(NO1-NP))
-      END DO
-
-end subroutine int2p
-
-
-
-
-
-
-
-
-
-
-
 
 !---------------------------------------------------------------------------------
 !
@@ -2841,7 +2545,7 @@ subroutine Evaluate_CI( T   , Q   , P        , itime                  , &
             !-----------------------------------------------------------------------------
             !----- inject into the boundary layer -- NOTE returns humidity as kg/m2
             !-----------------------------------------------------------------------------
-            call inject_and_mix( pblp, evap, ppack, qpack, dpress, nlev1, missing, newQhum )
+!            call inject_and_mix( pblp, evap, ppack, qpack, dpress, nlev1, missing, newQhum )
             qpack  =  newQhum
 
             !-----------------------------------------------------------------------------
@@ -2923,8 +2627,8 @@ subroutine hcfloop ( nlev, nlat, nlon, nday, missing, T, P, Q, t2m, q2m, psfc, T
 ! Local variables
 !
    integer                    ::  xx, yy, dd, nlev1
-   real(4), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, Theta
-   real(4)                    ::  pblp, pbl_theta, pblh
+   real(4), dimension(nlev+1) ::  ppack, tpack, hpack, qpack
+   real(4)                    ::  pblp
 
 !-----------------------------------------------------------------------------
 
@@ -3059,3 +2763,63 @@ subroutine pbl_gradient ( nlev, missing, theta, pressure, height, PBLP, PBLT, PB
       return
 
 end subroutine pbl_gradient
+
+
+
+
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Works in concert with the add_sensible_heat subroutine.  Once the heat is added
+!           then find the height where the NEW pbl theta intersects the profile
+!
+!----------------------------------------------------------------------------------------------
+subroutine add_surface_fluxes (temperature, height, pressure, qhum, pblp, sensible, latent, dt, nlev, missing, &
+                               new_temperature, new_qhum, new_pblp )
+
+      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+      real(4), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(4), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(4), intent(in )  ::  qhum       (nlev)      !*** specific humidity profile [kg/kg]
+      real(4), intent(in )  ::  height     (nlev)      !*** height above ground profile [m]
+      real(4), intent(in )  ::  sensible, latent       !*** surface sensible and latent heat flux [W/m2]
+      real(4), intent(in )  ::  pblp                   !*** pressure at the top of the boundary layer [Pa]
+      real(4), intent(in )  ::  dt                     !*** model time step in seconds [s]
+      real(4), intent(in )  ::  missing                !*** missing values
+      real(4), intent(out)  ::  new_temperature(nlev)  !*** updated temperature profile after adding sensible heat flux [K]
+      real(4), intent(out)  ::  new_qhum       (nlev)  !*** updated specific humidity profile after adding latent heat flux [kg/kg]
+      real(4), intent(out)  ::  new_pblp               !*** updated pressure at the top of the boundary layer [Pa]
+
+      real(4)               :: theta(nlev), new_pbl_theta, new_pblh
+
+      call get_new_pbl_by_adding_sh(     temperature, pressure, height, pblp, sensible, dt, nlev, missing, new_temperature)
+      call potentialTemperature    ( new_temperature, pressure, nlev, missing, theta)
+      call pbl_gradient            ( nlev, missing, theta, pressure, height, new_pblp, new_pbl_theta, new_pblh )
+      call inject_lh_into_pbl      ( pblp, latent, pressure, qhum, nlev, missing, new_qhum )
+
+end subroutine add_surface_fluxes
+
+
+
+
+
+!!======>>  Initialize
+!subroutine potentialTemperature( temperature, pressure, nlev, missing, theta)
+!subroutine pbl_gradient        ( nlev, missing, theta, pressure, height, pblp, pbl_theta, pblh )
+      
+
+!!======>>  Iterate over this
+!call depthPressure    (pressure, nlev, missing, dp)
+!call maxIndex         ( nlev, 1, (pressure.gt.pblp  .and.  pressure.ne.missing)    , ipbl   )
+!call sumIt            ( nlev, 1, (pressure.gt.pblp  .and.  pressure.ne.missing), dp, pbl_depth  )
+!subroutine column_energy              ( temperature, pressure, nlev, missing, pbl_energy )
+!subroutine add_sensible_heat_energy   ( pbl_energy , sensible_heat_flux, dt, missing, new_pbl_energy )
+!subroutine reconstruct_pbl_temperature( temperature, height, pressure, new_pbl_energy, pbl_depth, ipbl, nlev, missing, new_temperature)
+!subroutine potentialTemperature( new_temperature, pressure, nlev, missing, theta)
+!subroutine pbl_gradient        ( nlev, missing, theta, pressure, height, pblp, pbl_theta, pblh )
+!subroutine inject_and_mix      ( pblp, latent_heat_flux, pressure, qhum, nlev, missing, new_qhum )
+!temperature = new_temperature
+!!!!!!!!!
