@@ -30,33 +30,33 @@ subroutine Evaluate_CI_plevels( T   , Q   , P        , omega , itime            
    integer, intent(in  )                                       ::  num_EF      ! *** # number of evaporative fraction breakdowns 
    integer, intent(in  )                                       ::  itime       ! *** Start time of morning sounding
 
-   real(4), intent(in  )                                       ::  missing     ! *** Missing values
-   real(4), intent(in  )                                       ::  dt          ! *** timestep in seconds [s/timestep]
-   real(4), intent(in  ), dimension(nday,nhr8,nlev,nlat,nlon)  ::  omega       ! *** vertical velocity [Pa/s]
-   real(4), intent(in  ), dimension(nday     ,nlev,nlat,nlon)  ::  T  , Q      ! *** Temp and Humidity over level in SI
-   real(4), intent(in  ), dimension(nday          ,nlat,nlon)  ::  t2m, q2m    ! *** 2-m temp and humidity, Height in SI
+   real(8), intent(in  )                                       ::  missing     ! *** Missing values
+   real(8), intent(in  )                                       ::  dt          ! *** timestep in seconds [s/timestep]
+   real(8), intent(in  ), dimension(nday,nhr8,nlev,nlat,nlon)  ::  omega       ! *** vertical velocity [Pa/s]
+   real(8), intent(in  ), dimension(nday     ,nlev,nlat,nlon)  ::  T  , Q      ! *** Temp and Humidity over level in SI
+   real(8), intent(in  ), dimension(nday          ,nlat,nlon)  ::  t2m, q2m    ! *** 2-m temp and humidity, Height in SI
 
-   real(4), intent(in  ), dimension(          nlev          )  ::  P           ! *** Pressure in (level) SI
-   real(4), intent(in  ), dimension(nday          ,nlat,nlon)  ::  psfc        ! *** 2-m pressure and height in SI
-   real(4), intent(in  ), dimension(nday,nhr      ,nlat,nlon)  ::  rnet        ! *** Net Radiation time series [W/m2]
-   real(4), intent(in  ), dimension(     num_EF             )  ::  ef          ! *** Evaporative Fraction levels
+   real(8), intent(in  ), dimension(          nlev          )  ::  P           ! *** Pressure in (level) SI
+   real(8), intent(in  ), dimension(nday          ,nlat,nlon)  ::  psfc        ! *** 2-m pressure and height in SI
+   real(8), intent(in  ), dimension(nday,nhr      ,nlat,nlon)  ::  rnet        ! *** Net Radiation time series [W/m2]
+   real(8), intent(in  ), dimension(     num_EF             )  ::  ef          ! *** Evaporative Fraction levels
 
-   real(4), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TBM         ! *** Buoyant mixing theta at time of CI [K]
-   real(4), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  BCLP        ! *** Cloud base pressure at time of CI [K]
-   real(4), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  QBCL        ! *** Humidity at BCL [kg/kg]
-!   real(4), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  CAPE        ! *** CAPE from NARR [J/kg]
-   real(4), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TimeOfCI    ! *** Time of day of CI [0-24 hour]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TBM         ! *** Buoyant mixing theta at time of CI [K]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  BCLP        ! *** Cloud base pressure at time of CI [K]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  QBCL        ! *** Humidity at BCL [kg/kg]
+!   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  CAPE        ! *** CAPE from NARR [J/kg]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TimeOfCI    ! *** Time of day of CI [0-24 hour]
 
 
 !
 ! Local variables
 !
 !   integer, parameter         ::  itime = 3  
-!   real(4), parameter         ::  omega = 0.0
-   real(4), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, Theta, newTheta, newQhum, dpress, density, OmegaPack
-   real(4)                    ::  pbl_depth, pblp, pbl_theta, pblh, latent_heat, sensible_heat
-   real(4)                    ::  evap, Lc, tbm_out, tdef_out, bclp_out, pressure_deficit
-   real(4)                    ::  avgRHO, qbcl_out, avgOMEGA
+!   real(8), parameter         ::  omega = 0.0
+   real(8), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, Theta, newTheta, newQhum, dpress, density, OmegaPack
+   real(8)                    ::  pbl_depth, pblp, pbl_theta, pblh, latent_heat, sensible_heat
+   real(8)                    ::  evap, Lc, tbm_out, tdef_out, bclp_out, pressure_deficit
+   real(8)                    ::  avgRHO, qbcl_out, avgOMEGA
    integer                    ::  xx, yy, dd, tt, ee, zz
    integer                    ::  nlev1
 
@@ -343,12 +343,12 @@ end subroutine Evaluate_CI_plevels
 subroutine calculate_height_above_ground (temperature, pressure, nlev, missing, height)
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  temperature(nlev), pressure(nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  height(nlev)
-      real(4), parameter    ::  grav = 9.81, Rd = 287.04
+      real(8), intent(in )  ::  temperature(nlev), pressure(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  height(nlev)
+      real(8), parameter    ::  grav = 9.81, Rd = 287.04
 
-      real(4)               ::  Tavg
+      real(8)               ::  Tavg
       integer               ::  zz
 
       Tavg       =  missing
@@ -378,10 +378,10 @@ end subroutine calculate_height_above_ground
 !---------------------------------------------------------------------------------
 subroutine centerDiff(x, r, nlev, missing, dXdZ)
      integer, intent(in )  ::  nlev
-     real(4), intent(in )  ::  x   (nlev)
-     real(4), intent(in )  ::  r   (nlev)
-     real(4), intent(in )  ::  missing
-     real(4), intent(out)  ::  dXdZ(nlev)
+     real(8), intent(in )  ::  x   (nlev)
+     real(8), intent(in )  ::  r   (nlev)
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  dXdZ(nlev)
 
      !*********************************
      !****  Initialize
@@ -417,12 +417,12 @@ end subroutine centerDiff
 subroutine smoothed_lapse_rate (theta, pressure, nlev, missing, dTdP)
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  theta(nlev), pressure(nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  dTdP(nlev)
+      real(8), intent(in )  ::  theta(nlev), pressure(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  dTdP(nlev)
 
-      real(4), dimension(nlev) :: smoothed_theta, smoothed_pressure
-      real(4), dimension(nlev) :: temporary_profile, allmissing
+      real(8), dimension(nlev) :: smoothed_theta, smoothed_pressure
+      real(8), dimension(nlev) :: temporary_profile, allmissing
       logical, dimension(nlev) :: notmissing
 
       dTdP               =  missing
@@ -462,13 +462,13 @@ end subroutine smoothed_lapse_rate
 subroutine weighted_avg (theta, pressure, nlev, missing, smoothed_theta, smoothed_pressure)
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  theta(nlev), pressure(nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  smoothed_theta(nlev), smoothed_pressure(nlev)
+      real(8), intent(in )  ::  theta(nlev), pressure(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  smoothed_theta(nlev), smoothed_pressure(nlev)
 
       integer               ::  zz, i0, i1
-      real(4)               ::  pressure_layer(nlev), depth, mid_theta(nlev)
-      real(4), parameter    ::  threshold_depth = 1e3
+      real(8)               ::  pressure_layer(nlev), depth, mid_theta(nlev)
+      real(8), parameter    ::  threshold_depth = 1e3
 
 
       !==========================================================================
@@ -529,13 +529,13 @@ end subroutine weighted_avg
 !----------------------------------------------------------------------------------------------
 subroutine add_sensible_heat_energy (pbl_energy, sensible_heat, dt, missing, new_pbl_energy )
 
-      real(4), intent(in )  ::  pbl_energy          !*** integrated PBL energy [J/m2]
-      real(4), intent(in )  ::  sensible_heat , dt  !*** sensible heat flux and time step
-      real(4), intent(in )  ::  missing             !*** missing values
-      real(4), intent(out)  ::  new_pbl_energy      !*** new integrated PBL energy [J/m2]
+      real(8), intent(in )  ::  pbl_energy          !*** integrated PBL energy [J/m2]
+      real(8), intent(in )  ::  sensible_heat , dt  !*** sensible heat flux and time step
+      real(8), intent(in )  ::  missing             !*** missing values
+      real(8), intent(out)  ::  new_pbl_energy      !*** new integrated PBL energy [J/m2]
 
       new_pbl_energy  =  pbl_energy
-      if( pbl_energy.ne.missing  .and.  sensible_heat.ne.missing ) then
+      if( pbl_energy.ne.missing  .and.  sensible_heat.ne.missing  .and.  sensible_heat.gt.0 ) then
          new_pbl_energy  =  pbl_energy + (dt * sensible_heat)
       end if
 
@@ -549,22 +549,30 @@ end subroutine add_sensible_heat_energy
 ! function: Get the new temperature profile after adding surface sensible heat flux
 !
 !----------------------------------------------------------------------------------------------
-subroutine get_new_pbl_by_adding_sh (temperature, pressure, height, pblp, sensible_heat, dt, nlev, missing, new_temperature)
+subroutine get_new_pbl_by_adding_sh (temperature, pressure, pblp, sensible_heat, dt, nlev, missing, &
+                                     updated_temperature)
 
       integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
-      real(4), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
-      real(4), intent(in )  ::  pressure   (nlev)      !*** pressure profile [K]
-      real(4), intent(in )  ::  height     (nlev)      !*** height profile [m]      
-      real(4), intent(in )  ::  pblp                   !*** pressure at top of pbl [Pa]
-      real(4), intent(in )  ::  sensible_heat          !*** surface sensible heat flux [W/m2]
-      real(4), intent(in )  ::  dt                     !*** model timestep in seconds [s]
-      real(4), intent(in )  ::  missing                !*** missing values
-      real(4), intent(out)  ::  new_temperature(nlev)  !*** average PBL potential temperautre after heat added
-      real(4), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp
+      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  pblp                   !*** pressure at top of pbl [Pa]
+      real(8), intent(in )  ::  sensible_heat          !*** surface sensible heat flux [W/m2]
+      real(8), intent(in )  ::  dt                     !*** model timestep in seconds [s]
+      real(8), intent(in )  ::  missing                !*** missing values
+      real(8), intent(out)  ::  updated_temperature(nlev)  !*** average PBL potential temperautre after heat added
+      real(8), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp
 
-      integer               ::  ipbl
-      real(4)               ::  pbl_energy, pbl_depth, new_pbl_energy, theta_pbl
-      real(4)               ::  theta(nlev), dp(nlev)
+      integer               ::  ipbl, imixed
+      real(8)               ::  pbl_energy, pbl_depth, new_pbl_energy, mixed_pbl_energy
+      real(8)               ::  theta_pbl, new_theta_pbl
+      real(8)               ::  new_pblp
+      real(8)               ::  new_temp(nlev)
+
+
+      !-----------------------------------------------------------------------------
+      !-- Initialize
+      !-----------------------------------------------------------------------------
+      updated_temperature  =  temperature
 
       !-----------------------------------------------------------------------------
       !-- Return indices where the PBL is -> check if pbl is within first layer
@@ -572,41 +580,157 @@ subroutine get_new_pbl_by_adding_sh (temperature, pressure, height, pblp, sensib
       !-- over nothing and returning a pbl_energy = 0; Note this will "mix" the 1st
       !-- layer automatically
       !-----------------------------------------------------------------------------
-      call depthPressure (pressure, nlev, missing, dp)
-      call sumIt         (nlev , 1, (pressure.ne.missing .and. pressure.ge.pblp), dp, pbl_depth  )
-      call maxIndex      (nlev , 1, (pressure.ne.missing .and. pressure.ge.pblp), ipbl )
-      pbl_depth  =  pressure(1) - pressure(ipbl)
-      call column_energy (temperature(:ipbl), pressure(:ipbl), size(pressure(:ipbl)), missing, pbl_energy )
+      call return_pbl_energy          ( temperature, pressure, pblp, nlev, missing, pbl_energy, ipbl)
 
       !-----------------------------------------------------------------------------
       !-- Add sensible heat flux to the integrated boundary layer energy
       !-----------------------------------------------------------------------------
-      call add_sensible_heat_energy   ( pbl_energy , sensible_heat, dt, missing, new_pbl_energy )
+      call add_sensible_heat_energy   ( pbl_energy, sensible_heat, dt, missing, new_pbl_energy )
 
       !-----------------------------------------------------------------------------
-      !-- Reconstruct the temperature profile given the integrated PBL energy
+      !-- Get new PBL theta, which includes the addition of sensible heat flux
+      !-- Note: this is currently "unmixed" but the theta_pbl is used to find a 
+      !--       new pbl height to then mix the energy
       !-----------------------------------------------------------------------------
-      call reconstruct_pbl_temperature( temperature, height, new_pbl_energy, pbl_depth, ipbl, nlev, missing, new_temperature )
-
-
-      !-----------------------------------------------------------------------------
-      !-- Find where the new PBL potential temperature intersects the profile
-      !-----------------------------------------------------------------------------
-      call potentialTemperature(temperature, pressure, nlev, missing, theta)
-      theta_pbl   =   sum(theta(:ipbl), mask = theta(:ipbl).ne.missing) / count(theta(:ipbl).ne.missing)
-      call maxIndex            (nlev , 1, (theta.ne.missing .and. theta_pbl.gt.theta), ipbl )
+      call get_pbl_theta_using_energy( pressure, new_pbl_energy, ipbl, nlev, missing, theta_pbl )
 
       !-----------------------------------------------------------------------------
-      !-- Use the new boundary layer depth to calculate a new energy extending through
-      !-- boundary; finally reconstruct the temperature profile again
+      !-- Find new pbl intersection point using the updated theta_pbl
+      !-- Return new temperature profile and new pbl pressure
       !-----------------------------------------------------------------------------
-      pbl_depth  =  pressure(1) - pressure(ipbl)
-      call column_energy              ( temperature(:ipbl), pressure(:ipbl), size(pressure(:ipbl)), missing, pbl_energy )
-      call reconstruct_pbl_temperature( temperature, height, new_pbl_energy, pbl_depth, ipbl, nlev, missing, new_temperature )
+      call get_new_pbl_using_theta( temperature, pressure, theta_pbl, nlev, missing, new_pblp, new_temp )
 
+      !-----------------------------------------------------------------------------
+      !-- Mix the energy to the new boundary layer pressure
+      !-----------------------------------------------------------------------------
+      call return_pbl_energy          ( new_temp, pressure, new_pblp, nlev, missing, mixed_pbl_energy, imixed)
+
+      !-----------------------------------------------------------------------------
+      !-- Get the updated (i.e. mixed) boundary layer potential temperature
+      !----------------------------------------------------------------------------
+      call get_pbl_theta_using_energy( pressure, mixed_pbl_energy, imixed, nlev, missing, new_theta_pbl )
+
+      !-----------------------------------------------------------------------------
+      !-- Reconstruct the temperature profile given the updated boundary layer theta
+      !-----------------------------------------------------------------------------
+      call reconstruct_temperature( temperature, pressure, new_theta_pbl, imixed, nlev, missing, updated_temperature )
 
 end subroutine get_new_pbl_by_adding_sh
 
+
+
+
+!-----------------------------------------------------------------------------
+!
+!  function:  Find new pbl intersection point using the updated theta_pbl
+!             Return new temperature profile and new pbl pressure
+!             It only works on resolved levels
+!             NOTE: This is a 'helper' function used internally in the 
+!                   get_new_pbl_by_adding_sh function
+!                   The more accurate and between model boundary layer calculation is
+!                   handled by the pbl_gradient function. This is a helper function      
+!
+!-----------------------------------------------------------------------------
+subroutine get_new_pbl_using_theta( temperature, pressure, theta_pbl, nlev, missing, new_pblp, new_temperature )
+      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  theta_pbl              !*** average potential temp of PBL [K]
+      real(8), intent(in )  ::  missing                !*** missing values
+      real(8), intent(out)  ::  new_temperature(nlev)  !*** average PBL potential temperautre after heat added [K]
+      real(8), intent(out)  ::  new_pblp               !*** pressure of new boundary layer [Pa]
+
+      real(8)               ::  theta(nlev)
+      integer               ::  ipbl
+
+      new_pblp        = missing
+      new_temperature = missing
+
+      call potentialTemperature(temperature, pressure, nlev, missing, theta)
+      call maxIndex(nlev , 1, (theta.ne.missing .and. theta_pbl.ge.theta), ipbl )
+
+      new_pblp      =  pressure(ipbl)
+      theta(:ipbl)  =  theta_pbl
+      call calculate_temperature(theta, pressure, nlev, missing, new_temperature)
+
+end subroutine get_new_pbl_using_theta
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Returns the average boundary layer potential temperature given
+!           some integrated boundary layer energy 
+!
+!  Solve the equation for potential temperature assuming theta to be constant
+!  throughout the PBL
+!                    _Psfc
+!               cp  |
+!   Energy  =  ---- | T dp
+!               g   |
+!                  _|Pbl
+! 
+!  Substitute in Theta = T (P_o / P)^alpha and assume theta constant through 
+! 
+!                        _Psfc
+!               g       |
+!   Theta  =  ---- E /  | (P/P_o)^alpha dp
+!              cp       |
+!                      _|Pbl
+! 
+!----------------------------------------------------------------------------------------------
+subroutine get_pbl_theta_using_energy( pressure, pbl_energy, ipbl, nlev, missing, pbl_theta )
+
+      real(8), intent(in )  ::  pressure(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pbl_energy             !*** integrated PBL energy [J/m2]
+      integer, intent(in )  ::  ipbl                   !*** index of PBL height
+      real(8), intent(in )  ::  missing                !*** missing value
+      real(8), intent(out)  ::  pbl_theta          !*** updated boundary layer potential temperature [K]
+
+      real(8), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp, Rd=287.04 
+      real(8), parameter    ::  alpha=Rd/cp, alpha1 = alpha + 1
+      real(8)               ::  numerator, denom
+
+      !-----------------------------------------------------------------------------
+      !-- Initialize output variable and return of PBL is within the first layer
+      !-----------------------------------------------------------------------------
+      pbl_theta  =  missing
+
+      !-----------------------------------------------------------------------------
+      !-- Solve the equation for potential temperature assuming theta to be constant
+      !-- throughout the PBL (as writtent above)
+      !-----------------------------------------------------------------------------
+      numerator  =  g_cp * pbl_energy
+      denom      =  (1/pressure(1))**alpha  *  (pressure(1)**(alpha1) - pressure(ipbl)**(alpha1)) * (1/alpha1)
+      pbl_theta  =  numerator / denom
+
+end subroutine get_pbl_theta_using_energy
+
+
+
+
+!-----------------------------------------------------------------------------
+!
+!  function: Return indices where the PBL is -> check if pbl is within first layer
+!            if so then assure that the index selects the 2nd layer to avoid integration
+!            over nothing and returning a pbl_energy = 0; Note this will "mix" the 1st
+!            layer automatically
+!
+!-----------------------------------------------------------------------------
+subroutine return_pbl_energy(temperature, pressure, pblp, nlev, missing, pbl_energy, ipbl)
+      integer, intent(in )  ::  nlev                 !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)    !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)    !*** pressure profile [K]
+      real(8), intent(in )  ::  pblp                 !*** pressure at top of pbl [Pa]
+      real(8), intent(in )  ::  missing              !*** missing values
+      real(8), intent(out)  ::  pbl_energy           !*** thermal energy integrated over PBL [J/m2]
+      integer, intent(out)  ::  ipbl                 !*** upper index of integration
+
+      call maxIndex      (nlev , 1, (pressure.ne.missing .and. pressure.ge.pblp), ipbl )
+      if( ipbl.le.1 ) ipbl = 2
+      call column_energy (temperature(:ipbl), pressure(:ipbl), size(pressure(:ipbl)), missing, pbl_energy )
+
+end subroutine return_pbl_energy
 
 
 
@@ -614,41 +738,32 @@ end subroutine get_new_pbl_by_adding_sh
 !----------------------------------------------------------------------------------------------
 !
 ! function: Reconstruct the temperature profile within the boundary layer using the average PBL 
-!           temperature and depth of the boundary layer assuming a dry adiabatic profile
+!           potential temperature 
 !           This function is used in conjunction with the add_sensible_heat_energy subroutine
 !
 !----------------------------------------------------------------------------------------------
-subroutine reconstruct_pbl_temperature( temperature, height, pbl_energy, pbl_depth, ipbl, nlev, missing, new_temperature )
+subroutine reconstruct_temperature( temperature, pressure, theta_pbl, imixed, nlev, missing, new_temperature )
 
-      real(4), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
-      real(4), intent(in )  ::  height     (nlev)      !*** height above ground profile [m]
-      real(4), intent(in )  ::  pbl_energy             !*** integrated PBL energy [J/m2]
-      real(4), intent(in )  ::  pbl_depth              !*** PBL depth in pressure units [Pa]
-      integer, intent(in )  ::  ipbl                   !*** index of PBL height
-      real(4), intent(in )  ::  missing                !*** missing value
-      real(4), intent(out)  ::  new_temperature(nlev)  !*** new temperature profile [K]
-      real(4), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp
+      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  theta_pbl              !*** average potential temp of PBL [K]
+      integer, intent(in )  ::  imixed                 !*** index of new mixed boundary layer
+      real(8), intent(in )  ::  missing                !*** missing values
+      real(8), intent(out)  ::  new_temperature(nlev)  !*** updated temperautre after heat added [K]
 
-      real(4)               ::  avg_temperature, avg_height
-
+      real(8)               ::  theta(nlev)
 
       !-----------------------------------------------------------------------------
       !-- Initialize output variable and return of PBL is within the first layer
       !-----------------------------------------------------------------------------
-      new_temperature  =  temperature
-      if( ipbl.eq.1 ) return
+      new_temperature  =  missing
+      call potentialTemperature(temperature, pressure, nlev, missing, theta)
+      theta(:imixed)  =  theta_pbl
+      call calculate_temperature(theta, pressure, nlev, missing, new_temperature)
 
-      !-----------------------------------------------------------------------------
-      !-- Mix the temperature profile within the boundary making it dry adiabatic
-      !-----------------------------------------------------------------------------
-      !total_layer      =  pressure(1) - pressure(ipbl)
-      avg_temperature  =  g_cp * pbl_energy / pbl_depth
-      avg_height       =  0.5 * (height(ipbl) + height(1))
-      where( height(:ipbl).ne.missing )
-         new_temperature(:ipbl)  =  avg_temperature - (g_cp * (height(:ipbl) - avg_height)) 
-      end where
+end subroutine reconstruct_temperature
 
-end subroutine reconstruct_pbl_temperature
 
 
 
@@ -665,9 +780,9 @@ end subroutine reconstruct_pbl_temperature
 subroutine middle_layer_avg (scalar, pressure, nlev, missing, middle )
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  scalar(nlev), pressure(nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  middle(nlev)
+      real(8), intent(in )  ::  scalar(nlev), pressure(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  middle(nlev)
 
       integer :: nlev1
 
@@ -689,6 +804,33 @@ end subroutine middle_layer_avg
 
 
 
+!---------------------------------------------------------------------------------
+!
+! function: Average over a certain layer Non-linearly
+!           Follows equation from Rogers and Yao textbook on Cloud Physics
+!
+!---------------------------------------------------------------------------------
+!subroutine log_layer_avg (scalar, pressure, nlev, missing, middle )
+!      integer, intent(in )  ::  nlev
+!      real(8), intent(in )  ::  scalar(nlev), pressure(nlev)
+!      real(8), intent(in )  ::  missing
+!      real(8), intent(out)  ::  middle
+!      integer :: nlev1
+!      !-------------------------------------------------------------------
+!      !--- Calculate layer averages (mid-point)
+!      !-------------------------------------------------------------------
+!      nlev1  = nlev - 1
+!      middle = missing
+!      where( scalar  (2:nlev).ne.missing  .and.  scalar  (:nlev1).ne.missing  .and.  &
+!             pressure(2:nlev).ne.missing  .and.  pressure(:nlev1).ne.missing         )
+!      middle  =  ( (scalar  (2:nlev)*log(pressure(2:nlev))  +  scalar(:nlev1)*log(pressure(:nlev1)))  /  &
+!                        log(pressure(2:nlev)*    pressure(:nlev1)) )
+!      end where
+!end subroutine log_layer_avg
+
+
+
+
 
 
 
@@ -700,9 +842,9 @@ end subroutine middle_layer_avg
 subroutine linear_layer_avg (scalar, nlev, missing, middle )
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  scalar(nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  middle(nlev)
+      real(8), intent(in )  ::  scalar(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  middle(nlev)
 
       integer :: nlev1
 
@@ -732,12 +874,12 @@ end subroutine linear_layer_avg
 subroutine avg_over_layer (incoming, targetDepth, depth, nlev, missing, outgoing )
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  incoming(nlev), depth(nlev)
-      real(4), intent(in )  ::  targetDepth
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  outgoing
+      real(8), intent(in )  ::  incoming(nlev), depth(nlev)
+      real(8), intent(in )  ::  targetDepth
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  outgoing
 
-      real(4)               ::  ngood !# of non-missing values within the desired layer
+      real(8)               ::  ngood !# of non-missing values within the desired layer
 
       outgoing  =  missing
       ngood     =  real(count(incoming.ne.missing .and. depth.le.targetDepth))
@@ -761,10 +903,10 @@ end subroutine avg_over_layer
 subroutine assign_layer (incoming, value2assign, targetDepth, depth, nlev, missing, outgoing )
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  incoming(nlev), depth  (nlev)
-      real(4), intent(in )  ::  targetDepth   , value2assign
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  outgoing(nlev)
+      real(8), intent(in )  ::  incoming(nlev), depth  (nlev)
+      real(8), intent(in )  ::  targetDepth   , value2assign
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  outgoing(nlev)
 
       integer               ::  iTarget
 
@@ -795,17 +937,17 @@ end subroutine assign_layer
 !---------------------------------------------------------------------------------
 subroutine packIt(profile, height2m, nlev, nlev1, psfc, press, missing, packed)
       integer, intent(in )  ::  nlev, nlev1
-      real(4), intent(in )  ::  missing
-      real(4), intent(in )  ::  profile(nlev)
-      real(4), intent(in )  ::  height2m
-      real(4), intent(in )  ::  press(nlev)
-      real(4), intent(in )  ::  psfc
-      real(4), intent(out)  ::  packed(nlev1)
+      real(8), intent(in )  ::  missing
+      real(8), intent(in )  ::  profile(nlev)
+      real(8), intent(in )  ::  height2m
+      real(8), intent(in )  ::  press(nlev)
+      real(8), intent(in )  ::  psfc
+      real(8), intent(out)  ::  packed(nlev1)
 
       logical              ::  notmissing(nlev1)
-      real(4)              ::  allmissing(nlev1)
-      real(4)              ::  working   (nlev1)
-      real(4)              ::  presswork (nlev1)
+      real(8)              ::  allmissing(nlev1)
+      real(8)              ::  working   (nlev1)
+      real(8)              ::  presswork (nlev1)
 
       working(2:)    =  profile
       working(1 )    =  height2m
@@ -843,13 +985,13 @@ end subroutine packIt
 subroutine total_density (press, temp, mixing_ratio, nsize, missing, density )
 
       integer, intent(in )  ::  nsize
-      real(4), intent(in )  ::  mixing_ratio(nsize)
-      real(4), intent(in )  ::  press  (nsize), temp(nsize)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  density(nsize)
+      real(8), intent(in )  ::  mixing_ratio(nsize)
+      real(8), intent(in )  ::  press  (nsize), temp(nsize)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  density(nsize)
 
-      real(4), parameter        ::  Rd=287.04, ep=0.622
-      real(4), dimension(nsize) ::  denom
+      real(8), parameter        ::  Rd=287.04, ep=0.622
+      real(8), dimension(nsize) ::  denom
 
       density  =  missing
       denom    =  missing
@@ -873,13 +1015,13 @@ end subroutine total_density
 subroutine totaldensity (press, temp, mixing_ratio, nsize, nlev, missing, density )
 
       integer, intent(in )  ::  nsize, nlev
-      real(4), intent(in )  ::  mixing_ratio(nlev,nsize)
-      real(4), intent(in )  ::  press  (nlev,nsize), temp(nlev,nsize)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  density(nlev,nsize)
+      real(8), intent(in )  ::  mixing_ratio(nlev,nsize)
+      real(8), intent(in )  ::  press  (nlev,nsize), temp(nlev,nsize)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  density(nlev,nsize)
 
-      real(4), parameter             ::  Rd=287.04, ep=0.622
-      real(4), dimension(nlev,nsize) ::  denom
+      real(8), parameter             ::  Rd=287.04, ep=0.622
+      real(8), dimension(nlev,nsize) ::  denom
 
       density  =  missing
       denom    =  missing
@@ -903,12 +1045,12 @@ end subroutine totaldensity
 subroutine idealGas_P (temp, density, mixQ, nsize, nlev, missing, pressure )
 
       integer, intent(in )  ::  nsize, nlev
-      real(4), intent(in )  ::  temp   (nlev,nsize)
-      real(4), intent(in )  ::  density(nlev,nsize), mixQ(nlev,nsize)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  pressure(nlev,nsize)
-      real(4), parameter    ::  Rd=287.04
-      real(4)               ::  Tvirt(nlev,nsize)
+      real(8), intent(in )  ::  temp   (nlev,nsize)
+      real(8), intent(in )  ::  density(nlev,nsize), mixQ(nlev,nsize)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  pressure(nlev,nsize)
+      real(8), parameter    ::  Rd=287.04
+      real(8)               ::  Tvirt(nlev,nsize)
 
       pressure  =  missing
       Tvirt     =  missing
@@ -931,10 +1073,10 @@ end subroutine idealGas_P
 !---------------------------------------------------------------------------------
 subroutine virtualTemp(temp, qhum, nsize, nlev, missing, Tvirt)
      integer, intent(in )  ::  nlev, nsize
-     real(4), intent(in )  ::  temp (nlev,nsize)
-     real(4), intent(in )  ::  qhum (nlev,nsize)
-     real(4), intent(in )  ::  missing
-     real(4), intent(out)  ::  Tvirt(nlev,nsize)
+     real(8), intent(in )  ::  temp (nlev,nsize)
+     real(8), intent(in )  ::  qhum (nlev,nsize)
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  Tvirt(nlev,nsize)
  
      Tvirt  =  missing
      where( temp.ne.missing  .and.  qhum.ne.missing )
@@ -954,13 +1096,13 @@ end subroutine virtualTemp
 !---------------------------------------------------------------------------------
 subroutine Latent_heat_of_condensation(T, missing, Lc)
 
-      real(4), intent(in )  ::  missing
-      real(4), intent(in )  ::  T 
-      real(4), intent(out)  ::  Lc
+      real(8), intent(in )  ::  missing
+      real(8), intent(in )  ::  T 
+      real(8), intent(out)  ::  Lc
 
-      real(4), parameter :: cvl   = 4218.     ,  cvv = 1463. !J K-1 kg-1
-      real(4), parameter :: Ttrip = 273.16    ,  Rv = 461    !J K-1 kg-1
-      real(4), parameter :: Eov   = 2375073.24
+      real(8), parameter :: cvl   = 4218.     ,  cvv = 1463. !J K-1 kg-1
+      real(8), parameter :: Ttrip = 273.16    ,  Rv = 461    !J K-1 kg-1
+      real(8), parameter :: Eov   = 2375073.24
 
       Lc = missing
       if( T.ne.missing )  Lc  =  Eov + Rv*T + (cvv-cvl) * (T-Ttrip)
@@ -982,10 +1124,10 @@ end subroutine Latent_heat_of_condensation
 subroutine midLevel(inputVariable, press, nlev, missing, middle)
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  inputVariable(nlev)
-      real(4), intent(in )  ::  press(nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  middle(nlev)
+      real(8), intent(in )  ::  inputVariable(nlev)
+      real(8), intent(in )  ::  press(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  middle(nlev)
 
       middle  =  inputVariable
       where( inputVariable(1:nlev-1).ne.missing  .and.  press(1:nlev-1).ne.missing  .and. &
@@ -1004,10 +1146,10 @@ end subroutine midLevel
 subroutine trueMidLevel(inputVariable, press, nlev, missing, middle)
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  inputVariable(nlev)
-      real(4), intent(in )  ::  press(nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  middle(nlev)
+      real(8), intent(in )  ::  inputVariable(nlev)
+      real(8), intent(in )  ::  press(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  middle(nlev)
 
       middle  =  missing
       where( inputVariable(1:nlev-1).ne.missing  .and.  press(1:nlev-1).ne.missing  .and. &
@@ -1032,11 +1174,11 @@ end subroutine trueMidLevel
 !---------------------------------------------------------------------------------
 subroutine columnDensity( mixing_ratio, dpress, nlev, missing, column_rho )
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  mixing_ratio(nlev)
-      real(4), intent(in )  ::  dpress      (nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  column_rho  (nlev)
-      real(4), parameter    ::  grav = 9.81
+      real(8), intent(in )  ::  mixing_ratio(nlev)
+      real(8), intent(in )  ::  dpress      (nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  column_rho  (nlev)
+      real(8), parameter    ::  grav = 9.81
 
       column_rho = missing
       where( dpress.ne.missing .and. mixing_ratio.ne.missing )
@@ -1056,9 +1198,9 @@ end subroutine columnDensity
 !---------------------------------------------------------------------------------
 subroutine cummulative_sum( incoming, nlev, missing, outgoing )
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  incoming(nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  outgoing(nlev)
+      real(8), intent(in )  ::  incoming(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  outgoing(nlev)
       integer               ::  zz
 
       outgoing  =  incoming
@@ -1081,10 +1223,10 @@ end subroutine cummulative_sum
 !---------------------------------------------------------------------------------
 subroutine columnDensityNoMix( dpress, nlev, missing, column_rho )
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  dpress    (nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  column_rho(nlev)
-      real(4), parameter    ::  grav = 9.81
+      real(8), intent(in )  ::  dpress    (nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  column_rho(nlev)
+      real(8), parameter    ::  grav = 9.81
 
       column_rho = missing
       where( dpress.ne.missing ) column_rho  =  dpress/grav
@@ -1106,11 +1248,11 @@ end subroutine columnDensityNoMix
 !---------------------------------------------------------------------------------
 subroutine columnDensityNoMix_Cummulative( dpress, nlev, missing, column_rho )
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  dpress     (nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  column_rho (nlev)
+      real(8), intent(in )  ::  dpress     (nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  column_rho (nlev)
 
-      real(4)               ::  column_rho0(nlev)
+      real(8)               ::  column_rho0(nlev)
 
       call columnDensityNoMix( dpress     , nlev, missing, column_rho0 )
       call cummulative_sum   ( column_rho0, nlev, missing, column_rho  )
@@ -1132,12 +1274,12 @@ end subroutine columnDensityNoMix_Cummulative
 !---------------------------------------------------------------------------------
 subroutine columnDensity_Cummulative( mixing_ratio, dpress, nlev, missing, column_rho )
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  mixing_ratio(nlev)
-      real(4), intent(in )  ::  dpress      (nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  column_rho  (nlev)
+      real(8), intent(in )  ::  mixing_ratio(nlev)
+      real(8), intent(in )  ::  dpress      (nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  column_rho  (nlev)
 
-      real(4)               ::  column_rho0(nlev)
+      real(8)               ::  column_rho0(nlev)
 
       call columnDensity  ( mixing_ratio, dpress, nlev, missing, column_rho0 )
       call cummulative_sum( column_rho0, nlev, missing, column_rho )
@@ -1155,11 +1297,11 @@ end subroutine columnDensity_Cummulative
 !---------------------------------------------------------------------------------
 subroutine potentialTemperature(temperature, pressure, nlev, missing, theta)
      integer, intent(in )  ::  nlev
-     real(4), intent(in )  ::  temperature(nlev)
-     real(4), intent(in )  ::  pressure   (nlev)
-     real(4), intent(in )  ::  missing
-     real(4), intent(out)  ::  theta(nlev)
-     real(4), parameter    ::  p_ref = 1e5, R_cp=287.04/1005.7
+     real(8), intent(in )  ::  temperature(nlev)
+     real(8), intent(in )  ::  pressure   (nlev)
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  theta(nlev)
+     real(8), parameter    ::  p_ref = 1e5, R_cp=287.04/1005.7
 
      theta  =  missing
      where(temperature.ne.missing  .and.  pressure.ne.missing)  
@@ -1173,15 +1315,15 @@ end subroutine potentialTemperature
 
 
 !---------------------------------------------------------------------------------
-! function: Calculate potential temperature
+! function: Calculate temperature from potential temperature
 !---------------------------------------------------------------------------------
 subroutine calculate_temperature(theta, pressure, nlev, missing, temperature)
      integer, intent(in )  ::  nlev
-     real(4), intent(in )  ::  pressure(nlev)
-     real(4), intent(in )  ::  missing
-     real(4), intent(in )  ::  theta(nlev)
-     real(4), intent(out)  ::  temperature(nlev)
-     real(4), parameter    ::  p_ref = 1e5, R_cp=287.04/1005.7
+     real(8), intent(in )  ::  pressure(nlev)
+     real(8), intent(in )  ::  missing
+     real(8), intent(in )  ::  theta(nlev)
+     real(8), intent(out)  ::  temperature(nlev)
+     real(8), parameter    ::  p_ref = 1e5, R_cp=287.04/1005.7
 
      temperature  =  missing
      where(theta.ne.missing  .and.  pressure.ne.missing)  
@@ -1201,11 +1343,11 @@ end subroutine calculate_temperature
 ! function: Calculate potential temperature
 !---------------------------------------------------------------------------------
 subroutine potentialTemperature1D(temperature, pressure, missing, theta)
-     real(4), intent(in )  ::  temperature
-     real(4), intent(in )  ::  pressure   
-     real(4), intent(in )  ::  missing
-     real(4), intent(out)  ::  theta
-     real(4), parameter    ::  p_ref = 1e5, R_cp=287.04/1005.7
+     real(8), intent(in )  ::  temperature
+     real(8), intent(in )  ::  pressure   
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  theta
+     real(8), parameter    ::  p_ref = 1e5, R_cp=287.04/1005.7
 
      theta  =  missing
      if(temperature.ne.missing  .and.  pressure.ne.missing)  then
@@ -1222,12 +1364,12 @@ end subroutine potentialTemperature1D
 ! function: Calculate near surface pressure using ideal gas law
 !---------------------------------------------------------------------------------
 subroutine surfacePressure(t, p, q, h, psfc)
-     real(4), intent(in )  ::  t
-     real(4), intent(in )  ::  p
-     real(4), intent(in )  ::  q
-     real(4), intent(in )  ::  h
-     real(4), intent(out)  ::  psfc
-     real(4), parameter    ::  grav=9.81, Rd=287.04, ep=0.622
+     real(8), intent(in )  ::  t
+     real(8), intent(in )  ::  p
+     real(8), intent(in )  ::  q
+     real(8), intent(in )  ::  h
+     real(8), intent(out)  ::  psfc
+     real(8), parameter    ::  grav=9.81, Rd=287.04, ep=0.622
      psfc = (p / (Rd * t * ((1. + (q/ep)) / (1. + q)) )) * grav * h
 end subroutine surfacePressure
 
@@ -1241,9 +1383,9 @@ end subroutine surfacePressure
 !---------------------------------------------------------------------------------
 subroutine depthPressure(press, nlev, missing, pressureDiff)
      integer, intent(in )  ::  nlev
-     real(4), intent(in )  ::  press(nlev)
-     real(4), intent(in )  ::  missing
-     real(4), intent(out)  ::  pressureDiff(nlev)
+     real(8), intent(in )  ::  press(nlev)
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  pressureDiff(nlev)
      pressureDiff  =  missing
      where( press(1:nlev-1).ne.missing  .and.  press(2:nlev).ne.missing )
             pressureDiff(1:nlev-1)  =  press(1:nlev-1) - press(2:nlev)
@@ -1259,13 +1401,13 @@ end subroutine depthPressure
 !---------------------------------------------------------------------------------
 subroutine virtualPotentialTemp(temp, qhum, press, nlev, missing, thetaV)
      integer, intent(in )  ::  nlev
-     real(4), intent(in )  ::  temp  (nlev)
-     real(4), intent(in )  ::  qhum  (nlev)
-     real(4), intent(in )  ::  press (nlev)
-     real(4), intent(in )  ::  missing
-     real(4), intent(out)  ::  thetaV(nlev)
+     real(8), intent(in )  ::  temp  (nlev)
+     real(8), intent(in )  ::  qhum  (nlev)
+     real(8), intent(in )  ::  press (nlev)
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  thetaV(nlev)
      
-     real(4)               ::  Tvirt(nlev)
+     real(8)               ::  Tvirt(nlev)
      call virtualTemperature  (temp, qhum, nlev, missing, Tvirt)
      call potentialTemperature(Tvirt, press, nlev, missing, thetaV)
 end subroutine virtualPotentialTemp
@@ -1279,10 +1421,10 @@ end subroutine virtualPotentialTemp
 !---------------------------------------------------------------------------------
 subroutine virtualTemperature(temp, qhum, nlev, missing, Tvirt)
      integer, intent(in )  ::  nlev
-     real(4), intent(in )  ::  temp  (nlev)
-     real(4), intent(in )  ::  qhum  (nlev)
-     real(4), intent(in )  ::  missing
-     real(4), intent(out)  ::  Tvirt(nlev)
+     real(8), intent(in )  ::  temp  (nlev)
+     real(8), intent(in )  ::  qhum  (nlev)
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  Tvirt(nlev)
  
      Tvirt  =  missing
      where( temp.ne.missing  .and.  qhum.ne.missing )
@@ -1300,13 +1442,13 @@ end subroutine virtualTemperature
 !---------------------------------------------------------------------------------
 subroutine layerDepth(press, t, q, p, h, nlev, missing, Depth)
      integer, intent(in )  ::  nlev
-     real(4), intent(in )  ::  press(nlev)
-     real(4), intent(in )  ::  t
-     real(4), intent(in )  ::  p
-     real(4), intent(in )  ::  q
-     real(4), intent(in )  ::  h
-     real(4), intent(in )  ::  missing
-     real(4), intent(out)  ::  Depth(nlev)
+     real(8), intent(in )  ::  press(nlev)
+     real(8), intent(in )  ::  t
+     real(8), intent(in )  ::  p
+     real(8), intent(in )  ::  q
+     real(8), intent(in )  ::  h
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  Depth(nlev)
 
      call depthPressure(press, nlev, missing, Depth)
      Depth(1)  =  press(2) - press(1)
@@ -1327,9 +1469,9 @@ end subroutine layerDepth
 !---------------------------------------------------------------------------------
 subroutine logMiss(variableToBeLogged, dimsize, missing, logVal)
      integer, intent(in )  ::  dimsize
-     real(4), intent(in )  ::  missing
-     real(4), intent(in )  ::  variableToBeLogged(dimsize)
-     real(4), intent(out)  ::  logVal(dimsize)
+     real(8), intent(in )  ::  missing
+     real(8), intent(in )  ::  variableToBeLogged(dimsize)
+     real(8), intent(out)  ::  logVal(dimsize)
      logVal  =  missing
      where( variableToBeLogged.ne.missing ) logVal = log(variableToBeLogged)
 end subroutine logMiss
@@ -1345,14 +1487,14 @@ end subroutine logMiss
 subroutine inject_moisture( tracer_density, injection_amount, mixLevel, press, dp, layer_depth, nlev, missing, new_density )
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  missing
-      real(4), intent(in )  ::  injection_amount      !*** amount of tracer to be injected [kg/m2]
-      real(4), intent(in )  ::  mixLevel              !*** Pressure of level to mix down from [Pa]
-      real(4), intent(in )  ::  tracer_density(nlev)  !*** tracer to be mixed assuming units of [kg/kg]
-      real(4), intent(in )  ::  dp(nlev)              !*** depth of each pressure level [Pa]
-      real(4), intent(in )  ::  press (nlev)          !*** pressure levels [Pa]
-      real(4), intent(in )  ::  layer_depth           !*** depth of boundary layer psfc - pblp [Pa]
-      real(4), intent(out)  ::  new_density(nlev)     !*** return mixed tracer profile [kg/kg]
+      real(8), intent(in )  ::  missing
+      real(8), intent(in )  ::  injection_amount      !*** amount of tracer to be injected [kg/m2]
+      real(8), intent(in )  ::  mixLevel              !*** Pressure of level to mix down from [Pa]
+      real(8), intent(in )  ::  tracer_density(nlev)  !*** tracer to be mixed assuming units of [kg/kg]
+      real(8), intent(in )  ::  dp(nlev)              !*** depth of each pressure level [Pa]
+      real(8), intent(in )  ::  press (nlev)          !*** pressure levels [Pa]
+      real(8), intent(in )  ::  layer_depth           !*** depth of boundary layer psfc - pblp [Pa]
+      real(8), intent(out)  ::  new_density(nlev)     !*** return mixed tracer profile [kg/kg]
 
      new_density  =  tracer_density
      where( press.gt.mixLevel .and. press.ne.missing .and. new_density.ne.missing )
@@ -1373,17 +1515,17 @@ end subroutine inject_moisture
 subroutine inject_lh_into_pbl( mixLevel, injection, pressure, tracer, nlev, missing, MixedProfile )
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  missing
-      real(4), intent(in )  ::  injection           !*** amount of tracer to be injected [kg/m2]
-      real(4), intent(in )  ::  mixLevel            !*** Pressure of level to mix down from [Pa]
-      real(4), intent(in )  ::  tracer(nlev)        !*** tracer to be mixed assuming units of [kg/kg]
-      real(4), intent(in )  ::  pressure(nlev)      !*** pressure levels [Pa]
-      real(4), intent(out)  ::  MixedProfile(nlev)  !*** return mixed tracer profile [kg/kg]
+      real(8), intent(in )  ::  missing
+      real(8), intent(in )  ::  injection           !*** amount of tracer to be injected [kg/m2]
+      real(8), intent(in )  ::  mixLevel            !*** Pressure of level to mix down from [Pa]
+      real(8), intent(in )  ::  tracer(nlev)        !*** tracer to be mixed assuming units of [kg/kg]
+      real(8), intent(in )  ::  pressure(nlev)      !*** pressure levels [Pa]
+      real(8), intent(out)  ::  MixedProfile(nlev)  !*** return mixed tracer profile [kg/kg]
 
       integer  ::  zz, ilayer_top
-      real(4)  ::  ilevel(nlev), layer_depth
-      real(4)  ::  tracer_density(nlev), air_density(nlev), tracer_density_w_flux(nlev)
-      real(4)  ::  tracer_mix          , air_mix, dpress(nlev)
+      real(8)  ::  ilevel(nlev), layer_depth
+      real(8)  ::  tracer_density(nlev), air_density(nlev), tracer_density_w_flux(nlev)
+      real(8)  ::  tracer_mix          , air_mix, dpress(nlev)
 
 
 
@@ -1465,12 +1607,12 @@ end subroutine inject_lh_into_pbl
 subroutine column_energy (temperature, pressure, nlev, missing, internal_energy )
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  temperature(nlev), pressure(nlev)
-      real(4), intent(in )  ::  missing
-      real(4), intent(out)  ::  internal_energy
+      real(8), intent(in )  ::  temperature(nlev), pressure(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  internal_energy
 
       integer               ::  nlev1
-      real(4), parameter    ::  grav = 9.81, cp = 1005.7, cp_g = cp/grav
+      real(8), parameter    ::  grav = 9.81, cp = 1005.7, cp_g = cp/grav
 
       !-------------------------------------------------------------------
       !--- Calculate layer averages (mid-point)
@@ -1491,19 +1633,55 @@ end subroutine column_energy
 
 
 
+!---------------------------------------------------------------------------------
+!
+! function: Calculate integrated column energy [J/m2]
+!
+!---------------------------------------------------------------------------------
+subroutine column_energy_levels (temperature, pressure, nlev, missing, internal_energy )
+
+      integer, intent(in )  ::  nlev
+      real(8), intent(in )  ::  temperature(nlev), pressure(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  internal_energy(nlev)
+
+      integer               ::  nlev1
+      real(8), parameter    ::  grav = 9.81, cp = 1005.7, cp_g = cp/grav
+
+      !-------------------------------------------------------------------
+      !--- Calculate layer averages (mid-point)
+      !-------------------------------------------------------------------
+      internal_energy  =  missing
+      nlev1            =  nlev - 1
+      where(temperature(:nlev1).ne.missing .and. temperature(2:nlev).ne.missing  .and.    &
+            pressure   (:nlev1).ne.missing .and. pressure   (2:nlev).ne.missing           )
+
+            internal_energy(:nlev1)  =  0.5  * (temperature(:nlev1) + temperature(2:nlev)) * & 
+                                        cp_g * (pressure   (:nlev1) - pressure   (2:nlev))
+
+      endwhere
+
+end subroutine column_energy_levels
+
+
+
+
+
+
+
 !-----------------------------------------------------------------------------
 ! function: Calculate saturation specific humidity [kg/kg]
 !-----------------------------------------------------------------------------
 subroutine saturationHumidity( t, p, nlev, missing, qsat )
       integer, intent(in ) :: nlev
-      real(4), intent(in ) :: t(nlev)
-      real(4), intent(in ) :: p(nlev)
-      real(4), intent(in ) :: missing
-      real(4), intent(out) :: qsat(nlev)
+      real(8), intent(in ) :: t(nlev)
+      real(8), intent(in ) :: p(nlev)
+      real(8), intent(in ) :: missing
+      real(8), intent(out) :: qsat(nlev)
 
-      real(4), parameter   ::  by100 = 1e2
-      real(4), parameter   ::  t0=273.15, ep=0.622, es0=6.11, a=17.269, b=35.86
-      real(4), parameter   ::  onemep=1.0 - ep
+      real(8), parameter   ::  by100 = 1e2
+      real(8), parameter   ::  t0=273.15, ep=0.622, es0=6.11, a=17.269, b=35.86
+      real(8), parameter   ::  onemep=1.0 - ep
 
       qsat  =  missing
       where( t.ne.missing .and. p.ne.missing )
@@ -1522,14 +1700,14 @@ end subroutine saturationHumidity
 !-----------------------------------------------------------------------------
 subroutine specificHumidity( t, p, relh, nlev, missing, qhum )
       integer, intent(in ) :: nlev
-      real(4), intent(in ) :: t   (nlev)
-      real(4), intent(in ) :: p   (nlev)
-      real(4), intent(in ) :: relh(nlev)
-      real(4), intent(in ) :: missing
-      real(4), intent(out) :: qhum(nlev)
+      real(8), intent(in ) :: t   (nlev)
+      real(8), intent(in ) :: p   (nlev)
+      real(8), intent(in ) :: relh(nlev)
+      real(8), intent(in ) :: missing
+      real(8), intent(out) :: qhum(nlev)
 
-      real(4), parameter   :: by100 = 1e2
-      real(4)              :: qsat(nlev), mixRatio(nlev)
+      real(8), parameter   :: by100 = 1e2
+      real(8)              :: qsat(nlev), mixRatio(nlev)
 
       qhum  =  missing
       call saturationHumidity( t, p, nlev, missing, qsat )
@@ -1548,11 +1726,11 @@ end subroutine specificHumidity
 !-----------------------------------------------------------------------------
 subroutine maskAbove( applyMaskTo, maskValue, limitingVariable, fillValue, nlev, maskedAbove )
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  applyMaskTo     (nlev)
-      real(4), intent(in )  ::  maskValue       
-      real(4), intent(in )  ::  limitingVariable(nlev)
-      real(4), intent(in )  ::  fillValue       
-      real(4), intent(out)  ::  maskedAbove     (nlev)
+      real(8), intent(in )  ::  applyMaskTo     (nlev)
+      real(8), intent(in )  ::  maskValue       
+      real(8), intent(in )  ::  limitingVariable(nlev)
+      real(8), intent(in )  ::  fillValue       
+      real(8), intent(out)  ::  maskedAbove     (nlev)
       maskedAbove  =  applyMaskTo
       where( limitingVariable.ge.fillValue )  maskedAbove  =  maskValue
 end subroutine maskAbove
@@ -1567,10 +1745,10 @@ end subroutine maskAbove
 !-----------------------------------------------------------------------------
 subroutine sumIt ( nlev, dims, conditional, var_to_sum, This_Sum )
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  var_to_sum (nlev)
+      real(8), intent(in )  ::  var_to_sum (nlev)
       logical, intent(in )  ::  conditional(nlev)
       integer, intent(in )  ::  dims
-      real(4), intent(out)  ::  This_Sum
+      real(8), intent(out)  ::  This_Sum
      
       This_Sum  =  sum( var_to_sum, mask = conditional, dim = dims )
 end subroutine sumIt
@@ -1607,7 +1785,7 @@ subroutine minIndex ( nlev, dims, mymask, ThisIndex )
       integer, intent(in )  ::  dims
       integer, intent(out)  ::  ThisIndex
 
-      real(4)               ::  ilevels(nlev)
+      real(8)               ::  ilevels(nlev)
       integer               ::  zz
 
       !-----------------------------------------------------
@@ -1632,7 +1810,7 @@ subroutine maxIndex ( nlev, dims, mymask, ThisIndex )
       integer, intent(in )  ::  dims
       integer, intent(out)  ::  ThisIndex
 
-      real(4)               ::  ilevels(nlev)
+      real(8)               ::  ilevels(nlev)
       integer               ::  zz
 
       !-----------------------------------------------------
@@ -1662,11 +1840,11 @@ subroutine checkForFog( ilower, iupper, psfc, pblp, press, qdef, nlev, missing, 
       integer, intent(out)  ::  i_sat
       integer, intent(out)  ::  i_unsat
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  psfc
-      real(4), intent(in )  ::  pblp
-      real(4), intent(in )  ::  press(nlev)
-      real(4), intent(in )  ::  qdef (nlev)
-      real(4), intent(in )  ::  missing
+      real(8), intent(in )  ::  psfc
+      real(8), intent(in )  ::  pblp
+      real(8), intent(in )  ::  press(nlev)
+      real(8), intent(in )  ::  qdef (nlev)
+      real(8), intent(in )  ::  missing
       integer, intent(in )  ::  iupper
       integer, intent(in )  ::  ilower
 
@@ -1720,8 +1898,8 @@ end subroutine checkForFog
 subroutine transition( profile, nlev, missing, i_unsat, i_sat )
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  missing
-      real(4), intent(in )  ::  profile(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(in )  ::  profile(nlev)
       integer, intent(out)  ::  i_unsat, i_sat
       integer               ::  zz,ilevels(nlev)
       integer               ::  notmissing, lessthan0
@@ -1788,10 +1966,10 @@ end subroutine transition
 subroutine transitionCheck( profile, psfc, pblp, press, nlev, missing, i_unsat, i_sat )
 
       integer, intent(in )  ::  nlev
-      real(4), intent(in )  ::  missing
-      real(4), intent(in )  ::  profile(nlev)
-      real(4), intent(in )  ::  press(nlev)
-      real(4), intent(in )  ::  pblp, psfc
+      real(8), intent(in )  ::  missing
+      real(8), intent(in )  ::  profile(nlev)
+      real(8), intent(in )  ::  press(nlev)
+      real(8), intent(in )  ::  pblp, psfc
       integer, intent(out)  ::  i_unsat, i_sat
 
 
@@ -1820,10 +1998,10 @@ end subroutine transitionCheck
 subroutine findIntercept( nlev, iupper, ilower, y, x, missing, interceptValue )
      integer, intent(in )  ::  nlev
      integer, intent(in )  ::  iupper, ilower
-     real(4), intent(in )  ::  y(nlev), x(nlev)
-     real(4), intent(in )  ::  missing
-     real(4), intent(out)  ::  interceptValue
-     real(4)               ::  y0, y1, x0, x1
+     real(8), intent(in )  ::  y(nlev), x(nlev)
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  interceptValue
+     real(8)               ::  y0, y1, x0, x1
 
      !-----------------------------------------------------------------------------
      !--- Get the upper and lower bounds for each variable to be calc'd at the BCL
@@ -1857,24 +2035,24 @@ subroutine hcfcalc ( nlev, missing, tmp_k, press, qhum, hgt, pblp, TBM, TDEF, BC
 ! Input/Output Variables
 !
    integer, intent(in   )                  ::  nlev        ! *** # of atmospheric levels
-   real(4), intent(in   )                  ::  missing     ! *** Missing values
-   real(4), intent(in   ), dimension(nlev) ::  tmp_k       ! *** Temperature (level), [K]
-   real(4), intent(in   ), dimension(nlev) ::  hgt         ! *** Geometric Height above ground (level) [m]
-   real(4), intent(in   ), dimension(nlev) ::  qhum        ! *** Specific Humidity (level) [kg/kg]
-   real(4), intent(in   ), dimension(nlev) ::  press       ! *** Pressure (level) [Pa]
-   real(4), intent(in   )                  ::  pblp        ! *** pressure of boundary layer [Pa]
-   real(4), intent(out  )                  ::  TBM         ! *** buoyant mixing pot. temp (convective threshold) [K]
-   real(4), intent(out  )                  ::  TDEF        ! *** potential temperature deficit need to initiate [K]
-   real(4), intent(out  )                  ::  BCLP        ! *** pressure of the buoyant condensation level [Pa]
-   real(4), intent(out  )                  ::  QBCL        ! *** specific humidity at the buoyant condensation level [kg/kg]
+   real(8), intent(in   )                  ::  missing     ! *** Missing values
+   real(8), intent(in   ), dimension(nlev) ::  tmp_k       ! *** Temperature (level), [K]
+   real(8), intent(in   ), dimension(nlev) ::  hgt         ! *** Geometric Height above ground (level) [m]
+   real(8), intent(in   ), dimension(nlev) ::  qhum        ! *** Specific Humidity (level) [kg/kg]
+   real(8), intent(in   ), dimension(nlev) ::  press       ! *** Pressure (level) [Pa]
+   real(8), intent(in   )                  ::  pblp        ! *** pressure of boundary layer [Pa]
+   real(8), intent(out  )                  ::  TBM         ! *** buoyant mixing pot. temp (convective threshold) [K]
+   real(8), intent(out  )                  ::  TDEF        ! *** potential temperature deficit need to initiate [K]
+   real(8), intent(out  )                  ::  BCLP        ! *** pressure of the buoyant condensation level [Pa]
+   real(8), intent(out  )                  ::  QBCL        ! *** specific humidity at the buoyant condensation level [kg/kg]
 !
 ! Local variables
 !
-   real(4), parameter        ::  p_ref = 1e5 , Lv=2.5e6 , cp=1005.7, R_cp=287.04/1005.7
-   real(4), dimension(nlev)  ::  rhoh
-   real(4), dimension(nlev)  ::  qdef, qmix, qsat, dpress, logp, pot_k
+   real(8), parameter        ::  p_ref = 1e5 , Lv=2.5e6 , cp=1005.7, R_cp=287.04/1005.7
+   real(8), dimension(nlev)  ::  rhoh
+   real(8), dimension(nlev)  ::  qdef, qmix, qsat, dpress, logp, pot_k
 
-   real(4)                   ::  pot2m
+   real(8)                   ::  pot2m
    integer                   ::  i_unsat, i_sat
 
 !-----------------------------------------------------------------------------
@@ -2059,48 +2237,48 @@ end subroutine hcfcalc
 ! Input/Output Variables
 !
    integer, intent(in ) :: nlev           !** # of vertical levels
-   real(4), intent(in ) :: missing        !** missing value
-   real(4), intent(in ) :: qlev_in(nlev)  !** specific humidity [kg/kg]
-   real(4), intent(in ) :: plev_in(nlev)  !** pressure [Pa]
-   real(4), intent(in ) :: tlev_in(nlev)  !** temperature [K]
-   real(4), intent(in ) :: tlaunch        !** launch level temperature [K]
-   real(4), intent(in ) :: plaunch        !** launch level pressure [Pa]
-   real(4), intent(in ) :: qlaunch        !** launch level spc. humidity [kg/kg]
-   real(4), intent(out) :: CAPE           !** CAPE from Launch-to-Equilibrium [J/kg]
+   real(8), intent(in ) :: missing        !** missing value
+   real(8), intent(in ) :: qlev_in(nlev)  !** specific humidity [kg/kg]
+   real(8), intent(in ) :: plev_in(nlev)  !** pressure [Pa]
+   real(8), intent(in ) :: tlev_in(nlev)  !** temperature [K]
+   real(8), intent(in ) :: tlaunch        !** launch level temperature [K]
+   real(8), intent(in ) :: plaunch        !** launch level pressure [Pa]
+   real(8), intent(in ) :: qlaunch        !** launch level spc. humidity [kg/kg]
+   real(8), intent(out) :: CAPE           !** CAPE from Launch-to-Equilibrium [J/kg]
 !
 ! Local variables
 !
-   real(4), parameter         ::  Rd=287.04, cp=1005.7
-   real(4), parameter         ::  Lv=2.5e6 , Rv=461.5, grav= 9.81
-   real(4), parameter         ::  epsilon=0.622
+   real(8), parameter         ::  Rd=287.04, cp=1005.7
+   real(8), parameter         ::  Lv=2.5e6 , Rv=461.5, grav= 9.81
+   real(8), parameter         ::  epsilon=0.622
 
    !---- constants for vapor pressure calculation Arden Buck 1996
-   real(4), parameter         ::  c  = 6.1121, a0 = 18.678, b0 = 234.5
-   real(4), parameter         ::  c0 = 257.14, C2K = 273.15  
+   real(8), parameter         ::  c  = 6.1121, a0 = 18.678, b0 = 234.5
+   real(8), parameter         ::  c0 = 257.14, C2K = 273.15  
 
    logical, dimension(nlev )  ::  notmissing
-   real(4), dimension(nlev )  ::  allmissing
-   real(4), dimension(nlev )  ::  vapor_pressure, rlev_in
+   real(8), dimension(nlev )  ::  allmissing
+   real(8), dimension(nlev )  ::  vapor_pressure, rlev_in
 
-   real(4), dimension(nlev+1) ::  dz
-   real(4), dimension(nlev+1) ::  ilev
-   real(4), dimension(nlev+1) ::  numerator
-   real(4), dimension(nlev+1) ::  denomenator
-   real(4), dimension(nlev+1) ::  moist_lapse
-   real(4), dimension(nlev+1) ::  temp_difference
-   real(4), dimension(nlev+1) ::  tmid, rmid, qmid, pmid
-   real(4), dimension(nlev+1) ::  virtual_temperature   
-   real(4), dimension(nlev+1) ::  tlev, rlev, plev, qlev
-   real(4), dimension(nlev+1) ::  parcel_tmid, parcel_temp
-   real(4), dimension(nlev+1) ::  wsat, esat
+   real(8), dimension(nlev+1) ::  dz
+   real(8), dimension(nlev+1) ::  ilev
+   real(8), dimension(nlev+1) ::  numerator
+   real(8), dimension(nlev+1) ::  denomenator
+   real(8), dimension(nlev+1) ::  moist_lapse
+   real(8), dimension(nlev+1) ::  temp_difference
+   real(8), dimension(nlev+1) ::  tmid, rmid, qmid, pmid
+   real(8), dimension(nlev+1) ::  virtual_temperature   
+   real(8), dimension(nlev+1) ::  tlev, rlev, plev, qlev
+   real(8), dimension(nlev+1) ::  parcel_tmid, parcel_temp
+   real(8), dimension(nlev+1) ::  wsat, esat
 
    integer                    ::  zz, nlev1
    integer                    ::  above_LNB, below_LNB
-   real(4)                    ::  rlaunch, vplaunch
-   real(4)                    ::  top_level_temp_diff
-   real(4)                    ::  t_not_buoyant, t_buoyant
-   real(4)                    ::  p_not_buoyant, p_buoyant
-   real(4)                    ::  LNB            !** Level of Neutral Buoyancy (LNB) [Pa]
+   real(8)                    ::  rlaunch, vplaunch
+   real(8)                    ::  top_level_temp_diff
+   real(8)                    ::  t_not_buoyant, t_buoyant
+   real(8)                    ::  p_not_buoyant, p_buoyant
+   real(8)                    ::  LNB            !** Level of Neutral Buoyancy (LNB) [Pa]
 
    
 
@@ -2394,31 +2572,31 @@ subroutine Evaluate_CI( T   , Q   , P        , itime                  , &
    integer, intent(in  )                                       ::  num_EF      ! *** # number of evaporative fraction breakdowns 
    integer, intent(in  )                                       ::  itime       ! *** Start time of morning sounding
 
-   real(4), intent(in  )                                       ::  missing     ! *** Missing values
-   real(4), intent(in  )                                       ::  dt          ! *** timestep in seconds [s/timestep]
-   real(4), intent(in  ), dimension(nday     ,nlev,nlat,nlon)  ::  T  , Q      ! *** Temp and Humidity over level in SI
-   real(4), intent(in  ), dimension(nday          ,nlat,nlon)  ::  t2m, q2m    ! *** 2-m temp and humidity, Height in SI
+   real(8), intent(in  )                                       ::  missing     ! *** Missing values
+   real(8), intent(in  )                                       ::  dt          ! *** timestep in seconds [s/timestep]
+   real(8), intent(in  ), dimension(nday     ,nlev,nlat,nlon)  ::  T  , Q      ! *** Temp and Humidity over level in SI
+   real(8), intent(in  ), dimension(nday          ,nlat,nlon)  ::  t2m, q2m    ! *** 2-m temp and humidity, Height in SI
 
-   real(4), intent(in  ), dimension(nday     ,nlev,nlat,nlon)  ::  P           ! *** Pressure and Height in (level) SI
-   real(4), intent(in  ), dimension(nday          ,nlat,nlon)  ::  psfc        ! *** 2-m pressure and height in SI
-   real(4), intent(in  ), dimension(nday,nhr      ,nlat,nlon)  ::  rnet        ! *** Net Radiation time series [W/m2]
-   real(4), intent(in  ), dimension(     num_EF             )  ::  ef          ! *** Evaporative Fraction levels
+   real(8), intent(in  ), dimension(nday     ,nlev,nlat,nlon)  ::  P           ! *** Pressure and Height in (level) SI
+   real(8), intent(in  ), dimension(nday          ,nlat,nlon)  ::  psfc        ! *** 2-m pressure and height in SI
+   real(8), intent(in  ), dimension(nday,nhr      ,nlat,nlon)  ::  rnet        ! *** Net Radiation time series [W/m2]
+   real(8), intent(in  ), dimension(     num_EF             )  ::  ef          ! *** Evaporative Fraction levels
 
-   real(4), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TBM         ! *** Buoyant mixing theta at time of CI [K]
-   real(4), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  BCLP        ! *** Cloud base pressure at time of CI [K]
-   real(4), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TimeOfCI    ! *** Time of day of CI [0-24 hour]
-   real(4), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  CAPE        ! *** CAPE when BCL is reached [J/kg]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TBM         ! *** Buoyant mixing theta at time of CI [K]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  BCLP        ! *** Cloud base pressure at time of CI [K]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TimeOfCI    ! *** Time of day of CI [0-24 hour]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  CAPE        ! *** CAPE when BCL is reached [J/kg]
 
 
 !
 ! Local variables
 !
 !   integer, parameter         ::  itime = 3  
-   real(4), parameter         ::  omega = 0.0
-   real(4), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, Theta, newTheta, newQhum, dpress, density
-   real(4)                    ::  pbl_depth, pblp, pbl_theta, pblh, latent_heat, sensible_heat
-   real(4)                    ::  evap, Lc, tbm_out, tdef_out, bclp_out, pressure_deficit
-   real(4)                    ::  avgRHO, qbcl_out
+   real(8), parameter         ::  omega = 0.0
+   real(8), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, Theta, newTheta, newQhum, dpress, density
+   real(8)                    ::  pbl_depth, pblp, pbl_theta, pblh, latent_heat, sensible_heat
+   real(8)                    ::  evap, Lc, tbm_out, tdef_out, bclp_out, pressure_deficit
+   real(8)                    ::  avgRHO, qbcl_out
    integer                    ::  xx, yy, dd, tt, ee
    integer                    ::  nlev1
 
@@ -2608,27 +2786,27 @@ subroutine hcfloop ( nlev, nlat, nlon, nday, missing, T, P, Q, t2m, q2m, psfc, T
    integer, intent(in  )                                  ::  nlat        ! *** # of horizontal grid size
    integer, intent(in  )                                  ::  nlon        ! *** # of horizontal grid size
    integer, intent(in  )                                  ::  nday        ! *** # of horizontal grid size
-   real(4), intent(in  )                                  ::  missing     ! *** Missing values
-   real(4), intent(in  ), dimension(     nlev          )  ::  P           ! *** Pressure (level) [Pa]
-   real(4), intent(in  ), dimension(nday,nlev,nlat,nlon)  ::  T           ! *** Temperature (level), [K]
-   real(4), intent(in  ), dimension(nday,nlev,nlat,nlon)  ::  Q           ! *** Specific Humidity (level) [kg/kg]
+   real(8), intent(in  )                                  ::  missing     ! *** Missing values
+   real(8), intent(in  ), dimension(     nlev          )  ::  P           ! *** Pressure (level) [Pa]
+   real(8), intent(in  ), dimension(nday,nlev,nlat,nlon)  ::  T           ! *** Temperature (level), [K]
+   real(8), intent(in  ), dimension(nday,nlev,nlat,nlon)  ::  Q           ! *** Specific Humidity (level) [kg/kg]
 
-   real(4), intent(in  ), dimension(nday     ,nlat,nlon)  ::  t2m         ! *** 2-m temperature [K]
-   real(4), intent(in  ), dimension(nday     ,nlat,nlon)  ::  q2m         ! *** 2-m specific humidity [kg/kg]
-   real(4), intent(in  ), dimension(nday     ,nlat,nlon)  ::  psfc        ! *** surface pressure [Pa]
+   real(8), intent(in  ), dimension(nday     ,nlat,nlon)  ::  t2m         ! *** 2-m temperature [K]
+   real(8), intent(in  ), dimension(nday     ,nlat,nlon)  ::  q2m         ! *** 2-m specific humidity [kg/kg]
+   real(8), intent(in  ), dimension(nday     ,nlat,nlon)  ::  psfc        ! *** surface pressure [Pa]
 
-   real(4), intent(out ), dimension(nday     ,nlat,nlon)  ::  TBM         ! *** buoyant mixing pot. temp (convective threshold) [K]
-   real(4), intent(out ), dimension(nday     ,nlat,nlon)  ::  TDEF        ! *** pot. temp deficit need to initiate [K]
-   real(4), intent(out ), dimension(nday     ,nlat,nlon)  ::  BCLP        ! *** pressure of buoyant condensation level [Pa]
-   real(4), intent(out ), dimension(nday     ,nlat,nlon)  ::  QBCL        ! *** Specific Humidity at bcl [kg/kg]
+   real(8), intent(out ), dimension(nday     ,nlat,nlon)  ::  TBM         ! *** buoyant mixing pot. temp (convective threshold) [K]
+   real(8), intent(out ), dimension(nday     ,nlat,nlon)  ::  TDEF        ! *** pot. temp deficit need to initiate [K]
+   real(8), intent(out ), dimension(nday     ,nlat,nlon)  ::  BCLP        ! *** pressure of buoyant condensation level [Pa]
+   real(8), intent(out ), dimension(nday     ,nlat,nlon)  ::  QBCL        ! *** Specific Humidity at bcl [kg/kg]
 
 
 !
 ! Local variables
 !
    integer                    ::  xx, yy, dd, nlev1
-   real(4), dimension(nlev+1) ::  ppack, tpack, hpack, qpack
-   real(4)                    ::  pblp
+   real(8), dimension(nlev+1) ::  ppack, tpack, hpack, qpack
+   real(8)                    ::  pblp
 
 !-----------------------------------------------------------------------------
 
@@ -2714,20 +2892,20 @@ subroutine pbl_gradient ( nlev, missing, theta, pressure, height, PBLP, PBLT, PB
 ! Input/Output Variables
 !
    integer, intent(in   )                   ::  nlev        ! *** # of atmospheric levels
-   real(4), intent(in   )                   ::  missing     ! *** Missing values
-   real(4), intent(in   ), dimension(nlev)  ::  theta       ! *** Potential Temperature (level), [K]
-   real(4), intent(in   ), dimension(nlev)  ::  pressure    ! *** Pressure (level) [Pa]
-   real(4), intent(in   ), dimension(nlev)  ::  height      ! *** Height (level) [m]
-   real(4), intent(out  )                   ::  PBLP        ! *** pressure of boundary layer height [Pa]
-   real(4), intent(out  )                   ::  PBLT        ! *** temperature of boundary layer height [K]
-   real(4), intent(out  )                   ::  PBLH        ! *** height of boundary layer height [m]
+   real(8), intent(in   )                   ::  missing     ! *** Missing values
+   real(8), intent(in   ), dimension(nlev)  ::  theta       ! *** Potential Temperature (level), [K]
+   real(8), intent(in   ), dimension(nlev)  ::  pressure    ! *** Pressure (level) [Pa]
+   real(8), intent(in   ), dimension(nlev)  ::  height      ! *** Height (level) [m]
+   real(8), intent(out  )                   ::  PBLP        ! *** pressure of boundary layer height [Pa]
+   real(8), intent(out  )                   ::  PBLT        ! *** temperature of boundary layer height [K]
+   real(8), intent(out  )                   ::  PBLH        ! *** height of boundary layer height [m]
 !
 ! Local variables
 !
-   real(4), parameter  ::  threshold_gradient = -0.0003
+   real(8), parameter  ::  threshold_gradient = -0.0003
 
    integer             ::  iupper, ilower
-   real(4)             ::  dTdP(nlev)
+   real(8)             ::  dTdP(nlev)
 
 
 !-----------------------------------------------------------------------------
@@ -2781,24 +2959,24 @@ subroutine add_surface_fluxes (temperature, height, pressure, qhum, pblp, sensib
                                new_temperature, new_qhum, new_pblp )
 
       integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
-      real(4), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
-      real(4), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
-      real(4), intent(in )  ::  qhum       (nlev)      !*** specific humidity profile [kg/kg]
-      real(4), intent(in )  ::  height     (nlev)      !*** height above ground profile [m]
-      real(4), intent(in )  ::  sensible, latent       !*** surface sensible and latent heat flux [W/m2]
-      real(4), intent(in )  ::  pblp                   !*** pressure at the top of the boundary layer [Pa]
-      real(4), intent(in )  ::  dt                     !*** model time step in seconds [s]
-      real(4), intent(in )  ::  missing                !*** missing values
-      real(4), intent(out)  ::  new_temperature(nlev)  !*** updated temperature profile after adding sensible heat flux [K]
-      real(4), intent(out)  ::  new_qhum       (nlev)  !*** updated specific humidity profile after adding latent heat flux [kg/kg]
-      real(4), intent(out)  ::  new_pblp               !*** updated pressure at the top of the boundary layer [Pa]
+      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  qhum       (nlev)      !*** specific humidity profile [kg/kg]
+      real(8), intent(in )  ::  height     (nlev)      !*** height above ground profile [m]
+      real(8), intent(in )  ::  sensible, latent       !*** surface sensible and latent heat flux [W/m2]
+      real(8), intent(in )  ::  pblp                   !*** pressure at the top of the boundary layer [Pa]
+      real(8), intent(in )  ::  dt                     !*** model time step in seconds [s]
+      real(8), intent(in )  ::  missing                !*** missing values
+      real(8), intent(out)  ::  new_temperature(nlev)  !*** updated temperature profile after adding sensible heat flux [K]
+      real(8), intent(out)  ::  new_qhum       (nlev)  !*** updated specific humidity profile after adding latent heat flux [kg/kg]
+      real(8), intent(out)  ::  new_pblp               !*** updated pressure at the top of the boundary layer [Pa]
 
-      real(4)               :: theta(nlev), new_pbl_theta, new_pblh
+      real(8)               ::  theta(nlev), new_pbl_theta, new_pblh
 
-      call get_new_pbl_by_adding_sh(     temperature, pressure, height, pblp, sensible, dt, nlev, missing, new_temperature)
+      call get_new_pbl_by_adding_sh(     temperature, pressure, pblp, sensible, dt, nlev, missing, new_temperature)
       call potentialTemperature    ( new_temperature, pressure, nlev, missing, theta)
       call pbl_gradient            ( nlev, missing, theta, pressure, height, new_pblp, new_pbl_theta, new_pblh )
-      call inject_lh_into_pbl      ( pblp, latent, pressure, qhum, nlev, missing, new_qhum )
+      call inject_lh_into_pbl      ( new_pblp, latent, pressure, qhum, nlev, missing, new_qhum )
 
 end subroutine add_surface_fluxes
 
