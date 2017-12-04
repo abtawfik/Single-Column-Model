@@ -12,10 +12,10 @@
 !   negative flux-CI feedbacks over certain regions and times of year
 !
 !-----------------------------------------------------------------------------
-subroutine Evaluate_CI_plevels( T   , Q   , P        , omega , itime                     , &
-                                t2m , q2m , psfc     , rnet  , ef      , dt    , nhr8    , &
-                                nlev, nlat, nlon     , nhr   , nday    , num_EF, missing , &
-                                TBM , BCLP, TimeOfCI , QBCL   )   !!! , CAPE                      )
+subroutine Evaluate_CI( T    , Q    , P     , omega , itime                     , &
+                        t2m  , q2m  , psfc  , rnet  , ef      , dt    , nhr8    , &
+                        nlev , nlat , nlon  , nhr   , nday    , num_EF, missing , &
+                        Pbl_depth, TimeOfCI , Precipitable_water   )
 
    implicit none
 !
@@ -41,23 +41,19 @@ subroutine Evaluate_CI_plevels( T   , Q   , P        , omega , itime            
    real(8), intent(in  ), dimension(nday,nhr      ,nlat,nlon)  ::  rnet        ! *** Net Radiation time series [W/m2]
    real(8), intent(in  ), dimension(     num_EF             )  ::  ef          ! *** Evaporative Fraction levels
 
-   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TBM         ! *** Buoyant mixing theta at time of CI [K]
-   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  BCLP        ! *** Cloud base pressure at time of CI [K]
-   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  QBCL        ! *** Humidity at BCL [kg/kg]
-!   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  CAPE        ! *** CAPE from NARR [J/kg]
    real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TimeOfCI    ! *** Time of day of CI [0-24 hour]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  Pbl_depth   ! *** PBL Depth at time of CI [Pa]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  Precipitable_water   ! *** Precipitable Water at time of CI [kg/m2]
 
 
 !
 ! Local variables
 !
-!   integer, parameter         ::  itime = 3  
-!   real(8), parameter         ::  omega = 0.0
-   real(8), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, Theta, newTheta, newQhum, dpress, density, OmegaPack
-   real(8)                    ::  pbl_depth, pblp, pbl_theta, pblh, latent_heat, sensible_heat
-   real(8)                    ::  evap, Lc, tbm_out, tdef_out, bclp_out, pressure_deficit
-   real(8)                    ::  avgRHO, qbcl_out, avgOMEGA
-   integer                    ::  xx, yy, dd, tt, ee, zz
+   real(8), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, theta, omega_pack
+   real(8), dimension(nlev+1) ::  t_updated, q_updated
+   real(8)                    ::  pblp, pbl_theta, pblh, latent_heat, sensible_heat   
+   real(8)                    ::  pblp_updated, pressure_deficit, pw
+   integer                    ::  xx, yy, dd, tt, ee
    integer                    ::  nlev1
 
 
@@ -68,13 +64,10 @@ subroutine Evaluate_CI_plevels( T   , Q   , P        , omega , itime            
       !-----------------------------------------------------------------------------
       !-- Initialize output variables
       !-----------------------------------------------------------------------------
-      TBM       =  missing
-      BCLP      =  missing
-      QBCL      =  missing
-!      CAPE      =  missing
-      TimeOfCI  =  missing
-      nlev1     =  nlev + 1
-
+      TimeOfCI            =  missing
+      Precipitable_water  =  missing
+      Pbl_depth           =  missing
+      nlev1               =  nlev + 1
 
       !-----------------------------------------------------------------------------
       !-- Loop over time, lat, and lon
@@ -83,7 +76,6 @@ subroutine Evaluate_CI_plevels( T   , Q   , P        , omega , itime            
       long_loop: do xx = 1,nlon
       ef_loop:   do ee = 1,num_EF
       day_loop:  do dd = 1,nday
-
 
          !--------------------------------------
          !-- Append 2-m quantiy to the profile 
@@ -98,41 +90,15 @@ subroutine Evaluate_CI_plevels( T   , Q   , P        , omega , itime            
                      psfc (dd  ,yy,xx), P               , missing, ppack  )
 
          !-----------------------------------------------------------------------------
-         !-- Calculate the potential temperature [This is mutable]
+         !-- Get initial boundary layer height, pressure, and temperature
          !-----------------------------------------------------------------------------
-         call potentialTemperature(tpack, ppack, nlev1, missing, Theta)
+         call theta_with_surface_reference( tpack, ppack, nlev1, missing, theta)
+         call pbl_gradient                ( nlev1,  missing, theta, ppack, hpack, pblp, pbl_theta, pblh )
 
          !-----------------------------------------------------------------------------
          !-- Calculate the height above ground [m]
          !-----------------------------------------------------------------------------
          call calculate_height_above_ground (tpack, ppack, nlev1, missing, hpack)
-
-         !-----------------------------------------------------------------------------
-         !-- Calcuate the boundary layer top variables but with no extra water vapor
-         !-- added to the column
-         !-----------------------------------------------------------------------------
-!         call pblHeat ( nlev1, missing, Theta, ppack, hpack, pblp, pbl_theta, pblh )
-
-         !-----------------------------------------------------------------------------
-         !-- Assign PBL quantities across the depth of the PBL
-         !-----------------------------------------------------------------------------
-         call assign_layer (Theta, pbl_theta, pblh, hpack, nlev1, missing, newTheta )
-         Theta      =  newTheta
-         pbl_depth  =  ppack(1) - pblp
-
-         !-----------------------------------------------------------------------------------
-         !-- Calculate density for column -> used for sensible heat calculation
-         !-----------------------------------------------------------------------------------
-         call total_density    ( ppack  , tpack, qpack, nlev1, missing, density )
-         call avg_over_layer   ( density, pblh , hpack, nlev1, missing, avgRHO  )
-
-         !-----------------------------------------------------------------------------------
-         !-- Return corresponding temperature given the previous heat added
-         !-----------------------------------------------------------------------------------
-         call calculate_temperature(Theta, ppack, nlev1, missing, tpack)
-
-
-
 
          !-----------------------------------------------------------------------------
          !-- Loop over time of day until Initiation occurs
@@ -148,167 +114,45 @@ subroutine Evaluate_CI_plevels( T   , Q   , P        , omega , itime            
             latent_heat    =  ef(ee)         * rnet(dd,tt,yy,xx)
             sensible_heat  =  (1.0 - ef(ee)) * rnet(dd,tt,yy,xx)
 
-
-!    write(*,*) '--->>   ',tt, pblh/1e3,pblp/1e2,latent_heat,sensible_heat
             !-----------------------------------------------------------------------------
-            !-- Calculate the height above ground [m]
-            !-----------------------------------------------------------------------------
-            call calculate_height_above_ground (tpack, ppack, nlev1, missing, hpack)
-
-
-            !-----------------------------------------------------------------------------
-            !-- Calcuate the boundary layer top variables but with no extra water vapor
-            !-- added to the column
-            !-----------------------------------------------------------------------------
-            !call pblHeat ( nlev1, missing, tpack, ppack, hpack, pblp, pbl_theta, pblh )
-            !write(*,*) '--->>   ',tt, pblh/1e3,pblp/1e2,latent_heat,sensible_heat
-
-
-            !-----------------------------------------------------------------------------
-            !-- Assign PBL quantities across the depth of the PBL
-            !-----------------------------------------------------------------------------
-            !call assign_layer (Theta, pbl_theta, pblh, hpack, nlev1, missing, newTheta )
-            !Theta      =  newTheta
-            !pbl_depth  =  ppack(1) - pblp
-
-
-            !-----------------------------------------------------------------------------------
-            !-- Calculate density for column -> used for sensible heat calculation
-            !-----------------------------------------------------------------------------------
-            call total_density    ( ppack  , tpack, qpack, nlev1, missing, density )
-            call avg_over_layer   ( density, pblh , hpack, nlev1, missing, avgRHO  )
-
-
-            !-----------------------------------------------------------------------------------
-            !-- Adds some sensible heat flux to the boundary layer to increase the temperature
-            !-----------------------------------------------------------------------------------
-            newTheta   =  Theta
-            pbl_depth  =  ppack(1) - pblp
-!            call add_sensible_heat( newTheta, sensible_heat, avgRHO, hpack, pblh, dt, nlev1, missing, Theta ) 
-!            call add_sensible_heat( newTheta, sensible_heat, pbl_depth, hpack, pblh, dt, nlev1, missing, Theta ) 
-            if( newTheta(1).gt.400  .or. Theta(1).gt.400 ) then
-               write(*,*)  "!!!! MAJOR ERROR !!!!"
-               write(*,*) '       indices             ',dd,yy,xx,ee,tt
-               write(*,*)  pblh, avgRHO, sensible_heat, dt
-               write(*,*)  ( (dt * sensible_heat) / (avgRHO*1005.7*pblh) )
-               write(*,*)  newTheta(1), Theta(1)
-               write(*,*)  pblp/1e2, pbl_theta
-               do zz=1,nlev1
-                  write(*,*)  hpack(zz), ppack(zz), Theta(zz), newTheta(1) - newTheta(zz), Theta(1) - Theta(zz)!density(zz)
-               end do
-               return
-            end if
-
-
-            !-----------------------------------------------------------------------------------
-            !-- Return corresponding temperature given the previous heat added
-            !-----------------------------------------------------------------------------------
-            call calculate_temperature(Theta, ppack, nlev1, missing, tpack)
-
-
-
-
-
-!  do zz=1,nlev1
-!      write(*,*)  hpack(zz), ppack(zz), Theta(zz), Theta(1) - Theta(zz)   !density(zz)
-!  end do
-
-
-            !-----------------------------------------------------------------------------
-            !-- Calcuate the boundary layer top variables but with no extra water vapor
-            !-- added to the column
-            !-----------------------------------------------------------------------------
-!            call pblHeat ( nlev1, missing, Theta, ppack, hpack, pblp, pbl_theta, pblh )
-
-
-!  write(*,*) '---##   ',tt, pblh/1e3,pblp/1e2
-!  write(*,*) "  "
-!  write(*,*) "  "
-!  write(*,*) "  "
-!  write(*,*) "  "
-!  write(*,*) "  "
-!  write(*,*) "  "
-!  write(*,*) "  "
-
-            !-----------------------------------------------------------------------------
-            !-- Assign PBL quantities across the depth of the PBL
-            !-----------------------------------------------------------------------------
-            call assign_layer (Theta, pbl_theta, pblh, hpack, nlev1, missing, newTheta )
-            Theta      =  newTheta
-            pbl_depth  =  ppack(1) - pblp
-            
-            !-----------------------------------------------------------------------------------
-            !-- Return corresponding temperature given the previous heat added
-            !-----------------------------------------------------------------------------------
-            call calculate_temperature(Theta, ppack, nlev1, missing, tpack)
-
-
-
-
-
-
-            !-----------------------------------------------------------------------------------
-            !-- Adds some latent heat flux to the boundary layer to increase the speciific humidity
-            !-----------------------------------------------------------------------------------
-            !-----------------------------------------------------------------------------
-            !----- Get the depth of each layer
-            !-----------------------------------------------------------------------------
-            call layerDepth( ppack, tpack(1), qpack(1), ppack(1), hpack(1), nlev1, missing, dpress )
-
-            !-----------------------------------------------------------------------------
-            !----- Convert from latent heat flux [W/m2] to evapotranspiration [kg/m2/timestep]
-            !-----------------------------------------------------------------------------
-            call Latent_heat_of_condensation(tpack(1), missing, Lc)
-            evap  =  latent_heat * dt / Lc 
-
-            !-----------------------------------------------------------------------------
-            !----- inject into the boundary layer -- NOTE returns humidity as kg/m2
-            !-----------------------------------------------------------------------------
-!            call inject_and_mix( pblp, evap, ppack, qpack, dpress, nlev1, missing, newQhum )
-            qpack  =  newQhum
-
-            !-----------------------------------------------------------------------------
-            !----- Calculate HCF variables in new system and check if CI occurred
-            !-----------------------------------------------------------------------------
-            !call hcfcalc ( nlev1, missing, tpack, ppack, qpack, hpack, pblp, tbm_out, tdef_out, bclp_out )
-            call hcfcalc ( nlev1, missing, tpack, ppack, qpack, hpack, pblp, tbm_out, tdef_out, bclp_out, qbcl_out )
-
-
-            !-----------------------------------------------------------------------------
-            !----- Average vertical velocity at and below the Boundary Layer
+            !-- Pack the omega variable to be same dimension as T,p,q, and h
+            !-- Need to put this variable within the time loop to ensure that
+            !-- omega varies throughout the day
             !-----------------------------------------------------------------------------
             call packIt(omega(dd,(tt/18)+1,:,yy,xx) , 0.0 , nlev   , nlev1      , &
-                        psfc (dd            ,yy,xx) , P   , missing, OmegaPack    )
-
-            call avg_over_layer( OmegaPack, pblh , hpack, nlev1, missing, avgOMEGA  )
-
+                        psfc (dd            ,yy,xx) , P   , missing, omega_pack   )
 
             !-----------------------------------------------------------------------------
-            !----- Check for CI
+            !-- Check if there is moist convection when applying the surface fluxes
             !-----------------------------------------------------------------------------
-            pressure_deficit  =  (pblp + avgOMEGA*dt) - bclp_out 
+            call is_there_moist_convection(tpack, hpack, ppack, qpack, pblp,          &
+                                           sensible_heat, latent_heat,                &
+                                           omega_pack, dt, nlev1, missing, &
+                                           pressure_deficit, t_updated, q_updated, pblp_updated )
+
+            !-----------------------------------------------------------------------------
+            !----- Output the desired variables when moist convective initiation occurs
+            !----- Also exit the time of day loop if initiation occurs and begin a new day
+            !----- This is because there is no "after initiation" results yet
+            !-----------------------------------------------------------------------------
             if( pressure_deficit.le.0 ) then
 
-               !!!write(*,*) "  We have achieved CI  ", dd,tt, tbm_out, bclp_out/1e2, pressure_deficit/1e2
-               TBM     (dd,ee,yy,xx)  =  tbm_out
-               BCLP    (dd,ee,yy,xx)  =  bclp_out
-               TimeOfCI(dd,ee,yy,xx)  =  tt * 1.0
-               QBCL    (dd,ee,yy,xx)  =  qbcl_out
-!               CAPE    (dd,ee,yy,xx)  =  cape_in(dd,(tt/18)+1,yy,xx)
-
-               !!!!add CAPE calculation later to figure out some sort of intensity
-!               call calculate_temperature(tbm_out, ppack, nlev1, missing, tbcl_out)
-!               call calc_cape( nlev1, tpack, qpack, ppack, tbcl_out, qbcl_out, bclp_out, CAPE(dd,ee,yy,xx), missing )
-
+!               TBM     (dd,ee,yy,xx)  =  tbm_out
+!               BCLP    (dd,ee,yy,xx)  =  bclp_out
+!               QBCL    (dd,ee,yy,xx)  =  qbcl_out
+               call return_precipitable_water( q_updated, ppack, nlev, missing, pw )
+               Pbl_depth         (dd,ee,yy,xx)  =  psfc(dd,yy,xx) - pblp_updated
+               TimeOfCI          (dd,ee,yy,xx)  =  tt * 1.0
+               Precipitable_Water(dd,ee,yy,xx)  =  pw
                exit time_of_day
             end if
 
-!!! Remember tpack and qpack need to be re-assigned  qpack = newQhum
-!!! Add an omega feature to calculating CI
-!!! make sure to define all these variables
-!!! define what ef is -- maybe pass it in?
-!!! exit this time_of_day loop if CI occurs
-!!! clean up code?
+            !-----------------------------------------------------------------------------
+            !----- Here is the fun mutable part:  Update the temperature and humidity profiles
+            !-----------------------------------------------------------------------------
+            tpack  =  t_updated
+            qpack  =  q_updated
+            pblp   =  pblp_updated
 
          end do time_of_day
 
@@ -320,7 +164,7 @@ subroutine Evaluate_CI_plevels( T   , Q   , P        , omega , itime            
 
 
 
-end subroutine Evaluate_CI_plevels
+end subroutine Evaluate_CI
 
 
 
@@ -329,6 +173,372 @@ end subroutine Evaluate_CI_plevels
 
 
 
+
+
+
+
+
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Get the new temperature profile after adding surface sensible heat flux
+!
+!----------------------------------------------------------------------------------------------
+subroutine get_new_pbl_by_adding_sh (temperature, pressure, pblp, sensible_heat, dt, nlev, missing, &
+                                     updated_temperature)
+
+      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  pblp                   !*** pressure at top of pbl [Pa]
+      real(8), intent(in )  ::  sensible_heat          !*** surface sensible heat flux [W/m2]
+      real(8), intent(in )  ::  dt                     !*** model timestep in seconds [s]
+      real(8), intent(in )  ::  missing                !*** missing values
+      real(8), intent(out)  ::  updated_temperature(nlev)  !*** average PBL potential temperautre after heat added
+      real(8), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp
+
+      integer               ::  ipbl
+      real(8)               ::  pbl_energy, new_pbl_energy
+      real(8)               ::  theta_pbl
+      real(8)               ::  new_temperature(nlev)
+
+      !-----------------------------------------------------------------------------
+      !-- Initialize
+      !-----------------------------------------------------------------------------
+      updated_temperature  =  temperature
+
+      !-----------------------------------------------------------------------------
+      !-- Return indices where the PBL is -> check if pbl is within first layer
+      !-- if so then assure that the index selects the 2nd layer to avoid integration
+      !-- over nothing and returning a pbl_energy = 0; Note this will "mix" the 1st
+      !-- layer automatically
+      !-----------------------------------------------------------------------------
+      call return_pbl_energy         ( temperature, pressure, pblp, nlev, missing, pbl_energy, ipbl)
+
+      !-----------------------------------------------------------------------------
+      !-- Add sensible heat flux to the integrated boundary layer energy
+      !-----------------------------------------------------------------------------
+      call add_sensible_heat_energy  ( pbl_energy, sensible_heat, dt, missing, new_pbl_energy )
+
+      !-----------------------------------------------------------------------------
+      !-- Get new PBL theta, which includes the addition of sensible heat flux
+      !-- Note: this is currently "unmixed" but the theta_pbl is used to find a 
+      !--       new pbl height to then mix the energy
+      !-----------------------------------------------------------------------------
+      call get_pbl_theta_using_energy( pressure, new_pbl_energy, ipbl, nlev, missing, theta_pbl )
+
+      !-----------------------------------------------------------------------------
+      !-- Find new pbl intersection point using the updated theta_pbl
+      !-- Return new temperature profile and new pbl pressure
+      !-----------------------------------------------------------------------------
+      call get_new_temp_profile      ( temperature, pressure, theta_pbl, sensible_heat, dt, nlev, missing, &
+                                       new_temperature )
+      updated_temperature  =  new_temperature
+
+end subroutine get_new_pbl_by_adding_sh
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Add sensible heat to the average PBL potential temperature 
+!           In general and for the purposes of this model the potential temp is the same across the PBL
+!          (note that next will be to reconstruct the PBL profile using the dry adiabatic lapse rate)
+!
+!----------------------------------------------------------------------------------------------
+subroutine add_sensible_heat_energy (pbl_energy, sensible_heat, dt, missing, new_pbl_energy )
+
+      real(8), intent(in )  ::  pbl_energy          !*** integrated PBL energy [J/m2]
+      real(8), intent(in )  ::  sensible_heat , dt  !*** sensible heat flux and time step
+      real(8), intent(in )  ::  missing             !*** missing values
+      real(8), intent(out)  ::  new_pbl_energy      !*** new integrated PBL energy [J/m2]
+
+      new_pbl_energy  =  pbl_energy
+      if( pbl_energy.ne.missing  .and.  sensible_heat.ne.missing  .and.  sensible_heat.gt.0 ) then
+         new_pbl_energy  =  pbl_energy + (dt * sensible_heat)
+      end if
+
+end subroutine add_sensible_heat_energy
+
+
+
+
+!-----------------------------------------------------------------------------
+!
+!  function:  Find new pbl intersection point using the updated theta_pbl
+!             Return new temperature profile
+!             It only works on resolved levels
+!             NOTE: This is a 'helper' function used internally in the 
+!                   get_new_pbl_by_adding_sh function
+!                   The more accurate and between model-layer boundary layer calculation is
+!                   handled by the pbl_gradient function. This is a helper function      
+!
+!-----------------------------------------------------------------------------
+subroutine get_new_temp_profile( temperature, pressure, theta_pbl, sensible, dt, nlev, missing, new_temperature )
+      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  theta_pbl              !*** average potential temp of PBL [K]
+      real(8), intent(in )  ::  dt                     !*** model timestep [s]
+      real(8), intent(in )  ::  sensible               !*** surface sensible heat flux [W/m2]
+      real(8), intent(in )  ::  missing                !*** missing values
+      real(8), intent(out)  ::  new_temperature(nlev)  !*** average PBL potential temperautre after heat added [K]
+
+      real(8)               ::  theta(nlev)
+      real(8)               ::  mixed_theta(nlev)
+      real(8)               ::  pbl_energy, mixed_pbl_theta, new_pbl_energy
+      integer               ::  imixed
+
+      !-----------------------------------------------------------------------------
+      !-- Initialize
+      !-----------------------------------------------------------------------------
+      new_temperature = missing
+
+      !-----------------------------------------------------------------------------
+      !-- Get level where the new theta (the one that includes senisble heat) 
+      !-- intersects the original theta profile (index = imixed)
+      !-- This will be the level where the temperature will be mixed 
+      !-- Note the special case where the buoyancy still is not strong enough 
+      !-- to exit the first layer
+      !-----------------------------------------------------------------------------
+      call theta_with_surface_reference(temperature, pressure, nlev, missing, theta)
+      call maxIndex(nlev , 1, (theta.ne.missing .and. theta_pbl.ge.theta), imixed )
+      mixed_theta   = theta
+      if( imixed.le.1 ) imixed = 2
+!         mixed_theta(1) = theta_pbl
+!         call temp_from_theta_with_surface_reference(mixed_theta, pressure, nlev, missing, new_temperature)
+!         return
+!      end if
+
+      !-----------------------------------------------------------------------------
+      !-- Prescribe the new theta (the one that includes sensible heating) to all levels
+      !-- Below the boundary layer and return the corresponding temperature profile
+      !-- NOTE:  This is prior to mixing the profile using the buoyancy produced by 
+      !--        surface heating. This will be done in the subsequent section
+      !-----------------------------------------------------------------------------
+!      unmixed_theta(:ipbl)  =  theta_pbl
+!      call calculate_temperature(unmixed_theta, pressure, nlev, missing, unmixed_temperature)
+
+      !-----------------------------------------------------------------------------
+      !-- Integrate the unmixed temp profile to the new mixing level (given by theta)
+      !-- and return the new integrated energy
+      !-- NOTE:  This is does NOT include surface sensible heating yet
+      !--        Surface sensible heat flux will be added in this next step
+      !-----------------------------------------------------------------------------
+      call column_energy (temperature(:imixed), pressure(:imixed), size(pressure(:imixed)), missing, pbl_energy )
+
+      !-----------------------------------------------------------------------------
+      !-- Add surface sensible heat flux to this new pbl depth
+      !-- The reasoning behind this is to 
+      !-- 1) first find the where the new PBL top is when heating the original boundary layer depth
+      !-- 2) then you estimate where the new PBL top is using this added buoyancy
+      !-- 3) now that you have a new depth you can add the original sensible heating across
+      !--    this new depth and finally return the corresponding temperature profile
+      !-----------------------------------------------------------------------------
+      call add_sensible_heat_energy  ( pbl_energy, sensible, dt, missing, new_pbl_energy )
+
+      !-----------------------------------------------------------------------------
+      !-- Finally get an updated (i.e. mixed) boundary layer theta and invert again
+      !-- to return a new temperature profile that includes sensible heat and mixing
+      !-- due to buoyancy from the added heat
+      !-----------------------------------------------------------------------------
+      call get_pbl_theta_using_energy( pressure, new_pbl_energy, imixed, nlev, missing, mixed_pbl_theta )
+      mixed_theta(:imixed)  =  mixed_pbl_theta
+      call temp_from_theta_with_surface_reference(mixed_theta, pressure, nlev, missing, new_temperature)
+
+
+end subroutine get_new_temp_profile
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Returns the average boundary layer potential temperature given
+!           some integrated boundary layer energy 
+!
+!  Solve the equation for potential temperature assuming theta to be constant
+!  throughout the PBL
+!                    _Psfc
+!               cp  |
+!   Energy  =  ---- | T dp
+!               g   |
+!                  _|Pbl
+! 
+!  Substitute in Theta = T (P_o / P)^alpha and assume theta constant through 
+! 
+!                        _Psfc
+!               g       |
+!   Theta  =  ---- E /  | (P/P_o)^alpha dp
+!              cp       |
+!                      _|Pbl
+! 
+!----------------------------------------------------------------------------------------------
+subroutine get_pbl_theta_using_energy( pressure, pbl_energy, ipbl, nlev, missing, pbl_theta )
+
+      real(8), intent(in )  ::  pressure(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pbl_energy             !*** integrated PBL energy [J/m2]
+      integer, intent(in )  ::  ipbl                   !*** index of PBL height
+      real(8), intent(in )  ::  missing                !*** missing value
+      real(8), intent(out)  ::  pbl_theta          !*** updated boundary layer potential temperature [K]
+
+      real(8), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp, Rd=287.04 
+      real(8), parameter    ::  alpha=Rd/cp, alpha1 = alpha + 1
+      real(8)               ::  numerator, denom
+
+      !-----------------------------------------------------------------------------
+      !-- Initialize output variable and return of PBL is within the first layer
+      !-----------------------------------------------------------------------------
+      pbl_theta  =  missing
+
+      !-----------------------------------------------------------------------------
+      !-- Solve the equation for potential temperature assuming theta to be constant
+      !-- throughout the PBL (as writtent above)
+      !-----------------------------------------------------------------------------
+      numerator  =  g_cp * pbl_energy
+      denom      =  (1/pressure(1))**alpha  *  (pressure(1)**(alpha1) - pressure(ipbl)**(alpha1)) * (1/alpha1)
+      pbl_theta  =  numerator / denom
+
+end subroutine get_pbl_theta_using_energy
+
+
+
+
+
+
+!-----------------------------------------------------------------------------
+!
+!  function: Return indices where the PBL is -> check if pbl is within first layer
+!            if so then assure that the index selects the 2nd layer to avoid integration
+!            over nothing and returning a pbl_energy = 0; Note this will "mix" the 1st
+!            layer automatically
+!
+!-----------------------------------------------------------------------------
+subroutine return_pbl_energy(temperature, pressure, pblp, nlev, missing, pbl_energy, ipbl)
+      integer, intent(in )  ::  nlev                 !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)    !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)    !*** pressure profile [K]
+      real(8), intent(in )  ::  pblp                 !*** pressure at top of pbl [Pa]
+      real(8), intent(in )  ::  missing              !*** missing values
+      real(8), intent(out)  ::  pbl_energy           !*** thermal energy integrated over PBL [J/m2]
+      integer, intent(out)  ::  ipbl                 !*** upper index of integration
+
+      call maxIndex      (nlev , 1, (pressure.ne.missing .and. pressure.ge.pblp), ipbl )
+      if( ipbl.le.1 ) ipbl = 2
+      call column_energy (temperature(:ipbl), pressure(:ipbl), size(pressure(:ipbl)), missing, pbl_energy )
+
+end subroutine return_pbl_energy
+
+
+
+
+
+
+!-----------------------------------------------------------------------------
+!
+!  function:
+!
+!-----------------------------------------------------------------------------
+subroutine mix_temperature_profile(temperature, pressure, pblp, nlev, missing, new_profile)
+      integer, intent(in )  ::  nlev                 !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)    !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)    !*** pressure profile [K]
+      real(8), intent(in )  ::  pblp                 !*** pressure at top of pbl [Pa]
+      real(8), intent(in )  ::  missing              !*** missing values
+      real(8), intent(out)  ::  new_profile(nlev)    !*** updated temperature profile [K]
+
+      real(8)               ::  pbl_theta, theta(nlev), mixed_theta(nlev)
+      real(8)               ::  pbl_energy
+      integer               ::  ipbl
+
+      new_profile  =  temperature
+
+!      call linear_layer_avg (scalar, nlev, missing, middle )
+
+      call maxIndex      (nlev , 1, (pressure.ne.missing .and. pressure.ge.pblp), ipbl )
+      if( ipbl.le.1 ) return
+
+
+      call column_energy (temperature(:ipbl), pressure(:ipbl), size(pressure(:ipbl)), missing, pbl_energy )
+      pbl_energy  =  pbl_energy + (200*60*10)
+      call get_pbl_theta_using_energy( pressure, pbl_energy, ipbl, nlev, missing, pbl_theta )
+      call theta_with_surface_reference(temperature, pressure, nlev, missing, theta)
+      mixed_theta         =  theta
+      mixed_theta(:ipbl)  =  pbl_theta
+      call temp_from_theta_with_surface_reference(mixed_theta, pressure, nlev, missing, new_profile)      
+
+end subroutine mix_temperature_profile
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Reconstruct the temperature profile within the boundary layer using the average PBL 
+!           potential temperature 
+!           This function is used in conjunction with the add_sensible_heat_energy subroutine
+!
+!----------------------------------------------------------------------------------------------
+!subroutine reconstruct_temperature( temperature, pressure, theta_pbl, imixed, nlev, missing, new_temperature )
+!
+!      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+!      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+!      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+!      real(8), intent(in )  ::  theta_pbl              !*** average potential temp of PBL [K]
+!      integer, intent(in )  ::  imixed                 !*** index of new mixed boundary layer
+!      real(8), intent(in )  ::  missing                !*** missing values
+!      real(8), intent(out)  ::  new_temperature(nlev)  !*** updated temperautre after heat added [K]
+!
+!      real(8)               ::  theta(nlev)
+!
+!      !-----------------------------------------------------------------------------
+!      !-- Initialize output variable and return of PBL is within the first layer
+!      !-----------------------------------------------------------------------------
+!      new_temperature  =  missing
+!      call potentialTemperature(temperature, pressure, nlev, missing, theta)
+!      theta(:imixed)  =  theta_pbl
+!      call calculate_temperature(theta, pressure, nlev, missing, new_temperature)
+!end subroutine reconstruct_temperature
+
+
+
+
+
+
+
+
+!---------------------------------------------------------------------------------
+!
+! function: Average over a certain layer Non-linearly
+!           Follows equation from Rogers and Yao textbook on Cloud Physics
+!
+!---------------------------------------------------------------------------------
+subroutine middle_layer_avg (scalar, pressure, nlev, missing, middle )
+
+      integer, intent(in )  ::  nlev
+      real(8), intent(in )  ::  scalar(nlev), pressure(nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  middle(nlev)
+
+      integer :: nlev1
+
+      !-------------------------------------------------------------------
+      !--- Calculate layer averages (mid-point)
+      !-------------------------------------------------------------------
+      nlev1  = nlev - 1
+      middle = missing
+      where( scalar  (2:nlev).ne.missing  .and.  scalar  (:nlev1).ne.missing  .and.  &
+             pressure(2:nlev).ne.missing  .and.  pressure(:nlev1).ne.missing         )
+
+         middle(:nlev1)  =  ( (scalar  (2:nlev)*log(pressure(2:nlev))  +  scalar(:nlev1)*log(pressure(:nlev1)))  /  &
+                           log(pressure(2:nlev)*    pressure(:nlev1)) )
+
+      end where
+
+end subroutine middle_layer_avg
 
 
 
@@ -520,318 +730,6 @@ end subroutine weighted_avg
 
 
 
-!----------------------------------------------------------------------------------------------
-!
-! function: Add sensible heat to the average PBL potential temperature 
-!           In general and for the purposes of this model the potential temp is the same across the PBL
-!          (note that next will be to reconstruct the PBL profile using the dry adiabatic lapse rate)
-!
-!----------------------------------------------------------------------------------------------
-subroutine add_sensible_heat_energy (pbl_energy, sensible_heat, dt, missing, new_pbl_energy )
-
-      real(8), intent(in )  ::  pbl_energy          !*** integrated PBL energy [J/m2]
-      real(8), intent(in )  ::  sensible_heat , dt  !*** sensible heat flux and time step
-      real(8), intent(in )  ::  missing             !*** missing values
-      real(8), intent(out)  ::  new_pbl_energy      !*** new integrated PBL energy [J/m2]
-
-      new_pbl_energy  =  pbl_energy
-      if( pbl_energy.ne.missing  .and.  sensible_heat.ne.missing  .and.  sensible_heat.gt.0 ) then
-         new_pbl_energy  =  pbl_energy + (dt * sensible_heat)
-      end if
-
-end subroutine add_sensible_heat_energy
-
-
-
-
-!----------------------------------------------------------------------------------------------
-!
-! function: Get the new temperature profile after adding surface sensible heat flux
-!
-!----------------------------------------------------------------------------------------------
-subroutine get_new_pbl_by_adding_sh (temperature, pressure, pblp, sensible_heat, dt, nlev, missing, &
-                                     updated_temperature)
-
-      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
-      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
-      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
-      real(8), intent(in )  ::  pblp                   !*** pressure at top of pbl [Pa]
-      real(8), intent(in )  ::  sensible_heat          !*** surface sensible heat flux [W/m2]
-      real(8), intent(in )  ::  dt                     !*** model timestep in seconds [s]
-      real(8), intent(in )  ::  missing                !*** missing values
-      real(8), intent(out)  ::  updated_temperature(nlev)  !*** average PBL potential temperautre after heat added
-      real(8), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp
-
-      integer               ::  ipbl, imixed
-      real(8)               ::  pbl_energy, pbl_depth, new_pbl_energy, mixed_pbl_energy
-      real(8)               ::  theta_pbl, new_theta_pbl
-      real(8)               ::  new_pblp
-      real(8)               ::  new_temp(nlev)
-
-
-      !-----------------------------------------------------------------------------
-      !-- Initialize
-      !-----------------------------------------------------------------------------
-      updated_temperature  =  temperature
-
-      !-----------------------------------------------------------------------------
-      !-- Return indices where the PBL is -> check if pbl is within first layer
-      !-- if so then assure that the index selects the 2nd layer to avoid integration
-      !-- over nothing and returning a pbl_energy = 0; Note this will "mix" the 1st
-      !-- layer automatically
-      !-----------------------------------------------------------------------------
-      call return_pbl_energy          ( temperature, pressure, pblp, nlev, missing, pbl_energy, ipbl)
-
-      !-----------------------------------------------------------------------------
-      !-- Add sensible heat flux to the integrated boundary layer energy
-      !-----------------------------------------------------------------------------
-      call add_sensible_heat_energy   ( pbl_energy, sensible_heat, dt, missing, new_pbl_energy )
-
-      !-----------------------------------------------------------------------------
-      !-- Get new PBL theta, which includes the addition of sensible heat flux
-      !-- Note: this is currently "unmixed" but the theta_pbl is used to find a 
-      !--       new pbl height to then mix the energy
-      !-----------------------------------------------------------------------------
-      call get_pbl_theta_using_energy( pressure, new_pbl_energy, ipbl, nlev, missing, theta_pbl )
-
-      !-----------------------------------------------------------------------------
-      !-- Find new pbl intersection point using the updated theta_pbl
-      !-- Return new temperature profile and new pbl pressure
-      !-----------------------------------------------------------------------------
-      call get_new_pbl_using_theta( temperature, pressure, theta_pbl, nlev, missing, new_pblp, new_temp )
-
-      !-----------------------------------------------------------------------------
-      !-- Mix the energy to the new boundary layer pressure
-      !-----------------------------------------------------------------------------
-      call return_pbl_energy          ( new_temp, pressure, new_pblp, nlev, missing, mixed_pbl_energy, imixed)
-
-      !-----------------------------------------------------------------------------
-      !-- Get the updated (i.e. mixed) boundary layer potential temperature
-      !----------------------------------------------------------------------------
-      call get_pbl_theta_using_energy( pressure, mixed_pbl_energy, imixed, nlev, missing, new_theta_pbl )
-
-      !-----------------------------------------------------------------------------
-      !-- Reconstruct the temperature profile given the updated boundary layer theta
-      !-----------------------------------------------------------------------------
-      call reconstruct_temperature( temperature, pressure, new_theta_pbl, imixed, nlev, missing, updated_temperature )
-
-end subroutine get_new_pbl_by_adding_sh
-
-
-
-
-!-----------------------------------------------------------------------------
-!
-!  function:  Find new pbl intersection point using the updated theta_pbl
-!             Return new temperature profile and new pbl pressure
-!             It only works on resolved levels
-!             NOTE: This is a 'helper' function used internally in the 
-!                   get_new_pbl_by_adding_sh function
-!                   The more accurate and between model boundary layer calculation is
-!                   handled by the pbl_gradient function. This is a helper function      
-!
-!-----------------------------------------------------------------------------
-subroutine get_new_pbl_using_theta( temperature, pressure, theta_pbl, nlev, missing, new_pblp, new_temperature )
-      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
-      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
-      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
-      real(8), intent(in )  ::  theta_pbl              !*** average potential temp of PBL [K]
-      real(8), intent(in )  ::  missing                !*** missing values
-      real(8), intent(out)  ::  new_temperature(nlev)  !*** average PBL potential temperautre after heat added [K]
-      real(8), intent(out)  ::  new_pblp               !*** pressure of new boundary layer [Pa]
-
-      real(8)               ::  theta(nlev)
-      integer               ::  ipbl
-
-      new_pblp        = missing
-      new_temperature = missing
-
-      call potentialTemperature(temperature, pressure, nlev, missing, theta)
-      call maxIndex(nlev , 1, (theta.ne.missing .and. theta_pbl.ge.theta), ipbl )
-
-      new_pblp      =  pressure(ipbl)
-      theta(:ipbl)  =  theta_pbl
-      call calculate_temperature(theta, pressure, nlev, missing, new_temperature)
-
-end subroutine get_new_pbl_using_theta
-
-
-
-!----------------------------------------------------------------------------------------------
-!
-! function: Returns the average boundary layer potential temperature given
-!           some integrated boundary layer energy 
-!
-!  Solve the equation for potential temperature assuming theta to be constant
-!  throughout the PBL
-!                    _Psfc
-!               cp  |
-!   Energy  =  ---- | T dp
-!               g   |
-!                  _|Pbl
-! 
-!  Substitute in Theta = T (P_o / P)^alpha and assume theta constant through 
-! 
-!                        _Psfc
-!               g       |
-!   Theta  =  ---- E /  | (P/P_o)^alpha dp
-!              cp       |
-!                      _|Pbl
-! 
-!----------------------------------------------------------------------------------------------
-subroutine get_pbl_theta_using_energy( pressure, pbl_energy, ipbl, nlev, missing, pbl_theta )
-
-      real(8), intent(in )  ::  pressure(nlev)      !*** temperature profile [K]
-      real(8), intent(in )  ::  pbl_energy             !*** integrated PBL energy [J/m2]
-      integer, intent(in )  ::  ipbl                   !*** index of PBL height
-      real(8), intent(in )  ::  missing                !*** missing value
-      real(8), intent(out)  ::  pbl_theta          !*** updated boundary layer potential temperature [K]
-
-      real(8), parameter    ::  grav = 9.81, cp = 1005.7, g_cp = grav/cp, Rd=287.04 
-      real(8), parameter    ::  alpha=Rd/cp, alpha1 = alpha + 1
-      real(8)               ::  numerator, denom
-
-      !-----------------------------------------------------------------------------
-      !-- Initialize output variable and return of PBL is within the first layer
-      !-----------------------------------------------------------------------------
-      pbl_theta  =  missing
-
-      !-----------------------------------------------------------------------------
-      !-- Solve the equation for potential temperature assuming theta to be constant
-      !-- throughout the PBL (as writtent above)
-      !-----------------------------------------------------------------------------
-      numerator  =  g_cp * pbl_energy
-      denom      =  (1/pressure(1))**alpha  *  (pressure(1)**(alpha1) - pressure(ipbl)**(alpha1)) * (1/alpha1)
-      pbl_theta  =  numerator / denom
-
-end subroutine get_pbl_theta_using_energy
-
-
-
-
-!-----------------------------------------------------------------------------
-!
-!  function: Return indices where the PBL is -> check if pbl is within first layer
-!            if so then assure that the index selects the 2nd layer to avoid integration
-!            over nothing and returning a pbl_energy = 0; Note this will "mix" the 1st
-!            layer automatically
-!
-!-----------------------------------------------------------------------------
-subroutine return_pbl_energy(temperature, pressure, pblp, nlev, missing, pbl_energy, ipbl)
-      integer, intent(in )  ::  nlev                 !*** # of atmospheric levels
-      real(8), intent(in )  ::  temperature(nlev)    !*** temperature profile [K]
-      real(8), intent(in )  ::  pressure   (nlev)    !*** pressure profile [K]
-      real(8), intent(in )  ::  pblp                 !*** pressure at top of pbl [Pa]
-      real(8), intent(in )  ::  missing              !*** missing values
-      real(8), intent(out)  ::  pbl_energy           !*** thermal energy integrated over PBL [J/m2]
-      integer, intent(out)  ::  ipbl                 !*** upper index of integration
-
-      call maxIndex      (nlev , 1, (pressure.ne.missing .and. pressure.ge.pblp), ipbl )
-      if( ipbl.le.1 ) ipbl = 2
-      call column_energy (temperature(:ipbl), pressure(:ipbl), size(pressure(:ipbl)), missing, pbl_energy )
-
-end subroutine return_pbl_energy
-
-
-
-
-!----------------------------------------------------------------------------------------------
-!
-! function: Reconstruct the temperature profile within the boundary layer using the average PBL 
-!           potential temperature 
-!           This function is used in conjunction with the add_sensible_heat_energy subroutine
-!
-!----------------------------------------------------------------------------------------------
-subroutine reconstruct_temperature( temperature, pressure, theta_pbl, imixed, nlev, missing, new_temperature )
-
-      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
-      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
-      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
-      real(8), intent(in )  ::  theta_pbl              !*** average potential temp of PBL [K]
-      integer, intent(in )  ::  imixed                 !*** index of new mixed boundary layer
-      real(8), intent(in )  ::  missing                !*** missing values
-      real(8), intent(out)  ::  new_temperature(nlev)  !*** updated temperautre after heat added [K]
-
-      real(8)               ::  theta(nlev)
-
-      !-----------------------------------------------------------------------------
-      !-- Initialize output variable and return of PBL is within the first layer
-      !-----------------------------------------------------------------------------
-      new_temperature  =  missing
-      call potentialTemperature(temperature, pressure, nlev, missing, theta)
-      theta(:imixed)  =  theta_pbl
-      call calculate_temperature(theta, pressure, nlev, missing, new_temperature)
-
-end subroutine reconstruct_temperature
-
-
-
-
-
-
-
-
-!---------------------------------------------------------------------------------
-!
-! function: Average over a certain layer Non-linearly
-!           Follows equation from Rogers and Yao textbook on Cloud Physics
-!
-!---------------------------------------------------------------------------------
-subroutine middle_layer_avg (scalar, pressure, nlev, missing, middle )
-
-      integer, intent(in )  ::  nlev
-      real(8), intent(in )  ::  scalar(nlev), pressure(nlev)
-      real(8), intent(in )  ::  missing
-      real(8), intent(out)  ::  middle(nlev)
-
-      integer :: nlev1
-
-      !-------------------------------------------------------------------
-      !--- Calculate layer averages (mid-point)
-      !-------------------------------------------------------------------
-      nlev1  = nlev - 1
-      middle = missing
-      where( scalar  (2:nlev).ne.missing  .and.  scalar  (:nlev1).ne.missing  .and.  &
-             pressure(2:nlev).ne.missing  .and.  pressure(:nlev1).ne.missing         )
-
-         middle(:nlev1)  =  ( (scalar  (2:nlev)*log(pressure(2:nlev))  +  scalar(:nlev1)*log(pressure(:nlev1)))  /  &
-                           log(pressure(2:nlev)*    pressure(:nlev1)) )
-
-      end where
-
-end subroutine middle_layer_avg
-
-
-
-
-!---------------------------------------------------------------------------------
-!
-! function: Average over a certain layer Non-linearly
-!           Follows equation from Rogers and Yao textbook on Cloud Physics
-!
-!---------------------------------------------------------------------------------
-!subroutine log_layer_avg (scalar, pressure, nlev, missing, middle )
-!      integer, intent(in )  ::  nlev
-!      real(8), intent(in )  ::  scalar(nlev), pressure(nlev)
-!      real(8), intent(in )  ::  missing
-!      real(8), intent(out)  ::  middle
-!      integer :: nlev1
-!      !-------------------------------------------------------------------
-!      !--- Calculate layer averages (mid-point)
-!      !-------------------------------------------------------------------
-!      nlev1  = nlev - 1
-!      middle = missing
-!      where( scalar  (2:nlev).ne.missing  .and.  scalar  (:nlev1).ne.missing  .and.  &
-!             pressure(2:nlev).ne.missing  .and.  pressure(:nlev1).ne.missing         )
-!      middle  =  ( (scalar  (2:nlev)*log(pressure(2:nlev))  +  scalar(:nlev1)*log(pressure(:nlev1)))  /  &
-!                        log(pressure(2:nlev)*    pressure(:nlev1)) )
-!      end where
-!end subroutine log_layer_avg
-
-
-
-
-
 
 
 !---------------------------------------------------------------------------------
@@ -892,6 +790,26 @@ subroutine avg_over_layer (incoming, targetDepth, depth, nlev, missing, outgoing
 end subroutine avg_over_layer
 
 
+!---------------------------------------------------------------------------------
+!
+! function: Average over a certain layer
+!
+!---------------------------------------------------------------------------------
+subroutine max_over_layer (incoming, targetPressure, pressure, nlev, missing, outgoing )
+
+      integer, intent(in )  ::  nlev
+      real(8), intent(in )  ::  incoming(nlev), pressure(nlev)
+      real(8), intent(in )  ::  targetPressure
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  outgoing
+
+      outgoing  =  missing
+      outgoing  =  maxval(incoming, mask = incoming.ne.missing .and. pressure.ge.targetPressure)
+
+end subroutine max_over_layer
+
+
+
 
 
 
@@ -925,6 +843,27 @@ subroutine assign_layer (incoming, value2assign, targetDepth, depth, nlev, missi
 
 
 end subroutine assign_layer
+
+
+
+
+
+
+!-----------------------------------------------------------------------------
+!
+! function: Convert from latent heat flux [W/m2] to evapotranspiration [kg/m2/timestep]
+!
+!-----------------------------------------------------------------------------
+subroutine latent_heat_to_evapotrans(temperature, latent, dt, missing, evapotrans)
+      real(8), intent(in )  ::  temperature      !*** lowest level temperature [K]
+      real(8), intent(in )  ::  latent           !*** surface latent heat flux [W/m2]
+      real(8), intent(in )  ::  dt               !*** model timestep [s]
+      real(8), intent(in )  ::  missing          !*** missing values
+      real(8), intent(out)  ::  evapotrans       !*** evapotranspiration [kg/m2]
+      real(8)               ::  Lc               !*** latent heat of vaporization [J/kg]
+      call Latent_heat_of_condensation(temperature, missing, Lc)
+      evapotrans  =  latent * dt / Lc 
+end subroutine latent_heat_to_evapotrans
 
 
 
@@ -1289,6 +1228,30 @@ end subroutine columnDensity_Cummulative
 
 
 
+!---------------------------------------------------------------------------------
+!
+! function: Calculates the total column precipitable water using the equation:
+!           pw = sum( -1/grav * q * dp )
+!
+!---------------------------------------------------------------------------------
+subroutine return_precipitable_water( mixing_ratio, pressure, nlev, missing, pw )
+      integer, intent(in )  ::  nlev
+      real(8), intent(in )  ::  mixing_ratio(nlev)
+      real(8), intent(in )  ::  pressure    (nlev)
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  pw
+      real(8)               ::  column_rho0(nlev), dp(nlev)
+
+      pw  =  missing
+      call depthPressure         ( pressure    ,     nlev, missing, dp          )
+      call columnDensity         ( mixing_ratio, dp, nlev, missing, column_rho0 )
+      pw  =  sum( column_rho0, mask = column_rho0.ne.missing )
+
+end subroutine return_precipitable_water
+
+
+
+
 
 
 
@@ -1310,6 +1273,43 @@ subroutine potentialTemperature(temperature, pressure, nlev, missing, theta)
 end subroutine potentialTemperature
 
 
+
+!---------------------------------------------------------------------------------
+! function: Calculate potential temperature with a desired reference pressure
+!           assumes pressure is order bottom-up
+!---------------------------------------------------------------------------------
+subroutine theta_with_surface_reference(temperature, pressure, nlev, missing, theta)
+     integer, intent(in )  ::  nlev
+     real(8), intent(in )  ::  temperature(nlev)
+     real(8), intent(in )  ::  pressure   (nlev)
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  theta(nlev)
+     real(8), parameter    ::  R_cp=287.04/1005.7
+
+     theta  =  missing
+     where(temperature.ne.missing  .and.  pressure.ne.missing  .and. pressure(1).ne.missing)  
+          theta  =  temperature * ((pressure(1)/pressure)**(R_cp))
+     endwhere
+end subroutine theta_with_surface_reference
+
+
+!---------------------------------------------------------------------------------
+! function: Calculate temperature from potential temperature using a reference pressure
+!---------------------------------------------------------------------------------
+subroutine temp_from_theta_with_surface_reference(theta, pressure, nlev, missing, temperature)
+     integer, intent(in )  ::  nlev
+     real(8), intent(in )  ::  pressure(nlev)
+     real(8), intent(in )  ::  missing
+     real(8), intent(in )  ::  theta(nlev)
+     real(8), intent(out)  ::  temperature(nlev)
+     real(8), parameter    ::  R_cp=287.04/1005.7
+
+     temperature  =  missing
+     where(theta.ne.missing  .and.  pressure.ne.missing  .and. pressure(1).ne.missing)  
+          temperature  =  theta / ((pressure(1)/pressure)**(R_cp))
+     endwhere
+
+end subroutine temp_from_theta_with_surface_reference
 
 
 
@@ -2542,337 +2542,6 @@ end subroutine hcfcalc
 
 
 
-!-----------------------------------------------------------------------------
-!
-! Primary Subroutine: At a high-level this subroutine takes real atmospheric
-! profiles and sees whether convection initiates under various evaporative 
-! fraction regimes.  This subroutine begins with an early morning sounding
-! and then evolves forward in time with a given net radiation that is split by 
-! the desired evaporative fraction.  Overall the subroutine can explore the entire
-! possible space of evaporative fraction for a given day to see whether CI occurred
-! - Is convection more likely over dry or 'wet' surface flux properties?
-! - Applying it spatially can give an answer to the question of positive or
-!   negative flux-CI feedbacks over certain regions and times of year
-!
-!-----------------------------------------------------------------------------
-subroutine Evaluate_CI( T   , Q   , P        , itime                  , &
-                        t2m , q2m , psfc     , rnet  , ef    , dt     , &
-                        nlev, nlat, nlon     , nhr , nday  , num_EF, missing, &
-                        TBM , BCLP, TimeOfCI , CAPE                           )
-
-   implicit none
-!
-! Input/Output Variables
-!
-   integer, intent(in  )                                       ::  nday        ! *** # days
-   integer, intent(in  )                                       ::  nhr         ! *** # number of hours per day
-   integer, intent(in  )                                       ::  nlev        ! *** # of atmospheric levels
-   integer, intent(in  )                                       ::  nlat        ! *** # latitude
-   integer, intent(in  )                                       ::  nlon        ! *** # longitude
-   integer, intent(in  )                                       ::  num_EF      ! *** # number of evaporative fraction breakdowns 
-   integer, intent(in  )                                       ::  itime       ! *** Start time of morning sounding
-
-   real(8), intent(in  )                                       ::  missing     ! *** Missing values
-   real(8), intent(in  )                                       ::  dt          ! *** timestep in seconds [s/timestep]
-   real(8), intent(in  ), dimension(nday     ,nlev,nlat,nlon)  ::  T  , Q      ! *** Temp and Humidity over level in SI
-   real(8), intent(in  ), dimension(nday          ,nlat,nlon)  ::  t2m, q2m    ! *** 2-m temp and humidity, Height in SI
-
-   real(8), intent(in  ), dimension(nday     ,nlev,nlat,nlon)  ::  P           ! *** Pressure and Height in (level) SI
-   real(8), intent(in  ), dimension(nday          ,nlat,nlon)  ::  psfc        ! *** 2-m pressure and height in SI
-   real(8), intent(in  ), dimension(nday,nhr      ,nlat,nlon)  ::  rnet        ! *** Net Radiation time series [W/m2]
-   real(8), intent(in  ), dimension(     num_EF             )  ::  ef          ! *** Evaporative Fraction levels
-
-   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TBM         ! *** Buoyant mixing theta at time of CI [K]
-   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  BCLP        ! *** Cloud base pressure at time of CI [K]
-   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TimeOfCI    ! *** Time of day of CI [0-24 hour]
-   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  CAPE        ! *** CAPE when BCL is reached [J/kg]
-
-
-!
-! Local variables
-!
-!   integer, parameter         ::  itime = 3  
-   real(8), parameter         ::  omega = 0.0
-   real(8), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, Theta, newTheta, newQhum, dpress, density
-   real(8)                    ::  pbl_depth, pblp, pbl_theta, pblh, latent_heat, sensible_heat
-   real(8)                    ::  evap, Lc, tbm_out, tdef_out, bclp_out, pressure_deficit
-   real(8)                    ::  avgRHO, qbcl_out
-   integer                    ::  xx, yy, dd, tt, ee
-   integer                    ::  nlev1
-
-
-
-!-----------------------------------------------------------------------------
-
-      !-----------------------------------------------------------------------------
-      !-- Initialize output variables
-      !-----------------------------------------------------------------------------
-      TBM       =  missing
-      BCLP      =  missing
-      CAPE      =  missing
-      TimeOfCI  =  missing
-      nlev1     =  nlev + 1
-
-
-      !-----------------------------------------------------------------------------
-      !-- Loop over time, lat, and lon
-      !-----------------------------------------------------------------------------
-      lati_loop: do yy = 1,nlat 
-      long_loop: do xx = 1,nlon
-      ef_loop:   do ee = 1,num_EF
-      day_loop:  do dd = 1,nday
-
-
-         !--------------------------------------
-         !-- Append 2-m quantiy to the profile 
-         !--------------------------------------
-         call packIt(T   (dd,:,yy,xx), t2m(dd  ,yy,xx), nlev   , nlev1, &
-                     psfc(dd  ,yy,xx), P  (dd,:,yy,xx), missing, tpack  )
-
-         call packIt(Q   (dd,:,yy,xx), q2m(dd  ,yy,xx), nlev   , nlev1, &
-                     psfc(dd  ,yy,xx), P  (dd,:,yy,xx), missing, qpack  )
-
-         call packIt(P   (dd,:,yy,xx), psfc(dd  ,yy,xx), nlev   , nlev1, &
-                     psfc(dd  ,yy,xx), P   (dd,:,yy,xx), missing, ppack  )
-
-
-         !-----------------------------------------------------------------------------
-         !-- Calculate the potential temperature [This is mutable]
-         !-----------------------------------------------------------------------------
-         call potentialTemperature(tpack, ppack, nlev1, missing, Theta)
-
-
-         !-----------------------------------------------------------------------------
-         !-- Check if CI occurs yet??  No don't need to because I want to erode the 
-         !-- fog layer if one exists
-         !-----------------------------------------------------------------------------
-
-
-
-         !-----------------------------------------------------------------------------
-         !-- Loop over time of day until Initiation occurs
-         !-- Running a little mini-simulation!!!!!  
-         !-----------------------------------------------------------------------------
-         time_of_day: do tt = itime,nhr
-
-            !-----------------------------------------------------------------------------
-            !-- Don't do anything if there is no heat or moisture being added
-            !-- Otherwise partition the evaporative fraction between LH and SH
-            !-----------------------------------------------------------------------------
-            if( rnet(dd,tt,yy,xx).le.0 ) cycle time_of_day
-            latent_heat    =  ef(ee)         * rnet(dd,tt,yy,xx)
-            sensible_heat  =  (1.0 - ef(ee)) * rnet(dd,tt,yy,xx)
-
-
-            !-----------------------------------------------------------------------------
-            !-- Calculate the height above ground [m]
-            !-----------------------------------------------------------------------------
-            call calculate_height_above_ground (tpack, ppack, nlev1, missing, hpack)
-
-
-            !-----------------------------------------------------------------------------
-            !-- Calcuate the boundary layer top variables but with no extra water vapor
-            !-- added to the column
-            !-----------------------------------------------------------------------------
-!            call pblHeat ( nlev1, missing, tpack, ppack, hpack, pblp, pbl_theta, pblh )
-
-
-            !-----------------------------------------------------------------------------
-            !-- Assign PBL quantities across the depth of the PBL
-            !-----------------------------------------------------------------------------
-            call assign_layer (Theta, pbl_theta, pblh, hpack, nlev1, missing, newTheta )
-            Theta      =  newTheta
-            pbl_depth  =  ppack(1) - pblp
-
-
-            !-----------------------------------------------------------------------------------
-            !-- Calculate density for column -> used for sensible heat calculation
-            !-----------------------------------------------------------------------------------
-            call total_density    ( ppack  , tpack, qpack, nlev1, missing, density )
-            call avg_over_layer   ( density, pblh , hpack, nlev1, missing, avgRHO  )
-
-            !-----------------------------------------------------------------------------------
-            !-- Adds some sensible heat flux to the boundary layer to increase the temperature
-            !-----------------------------------------------------------------------------------
-!            call add_sensible_heat( newTheta, sensible_heat, avgRHO, hpack, pblh, dt, nlev1, missing, Theta ) 
-
-
-            !-----------------------------------------------------------------------------------
-            !-- Return corresponding temperature given the previous heat added
-            !-----------------------------------------------------------------------------------
-            call calculate_temperature(Theta, ppack, nlev1, missing, tpack)
-
-
-
-
-
-            !-----------------------------------------------------------------------------------
-            !-- Adds some latent heat flux to the boundary layer to increase the speciific humidity
-            !-----------------------------------------------------------------------------------
-            !-----------------------------------------------------------------------------
-            !----- Get the depth of each layer
-            !-----------------------------------------------------------------------------
-            call layerDepth( ppack, tpack(1), qpack(1), ppack(1), hpack(1), nlev1, missing, dpress )
-
-            !-----------------------------------------------------------------------------
-            !----- Convert from latent heat flux [W/m2] to evapotranspiration [kg/m2/timestep]
-            !-----------------------------------------------------------------------------
-            call Latent_heat_of_condensation(tpack(1), missing, Lc)
-            evap  =  latent_heat * dt / Lc 
-
-            !-----------------------------------------------------------------------------
-            !----- inject into the boundary layer -- NOTE returns humidity as kg/m2
-            !-----------------------------------------------------------------------------
-!            call inject_and_mix( pblp, evap, ppack, qpack, dpress, nlev1, missing, newQhum )
-            qpack  =  newQhum
-
-            !-----------------------------------------------------------------------------
-            !----- Calculate HCF variables in new system and check if CI occurred
-            !-----------------------------------------------------------------------------
-            !call hcfcalc ( nlev1, missing, tpack, ppack, qpack, hpack, pblp, tbm_out, tdef_out, bclp_out )
-            call hcfcalc ( nlev1, missing, tpack, ppack, qpack, hpack, pblp, tbm_out, tdef_out, bclp_out, qbcl_out )
-
-            !-----------------------------------------------------------------------------
-            !----- Check for CI
-            !-----------------------------------------------------------------------------
-            pressure_deficit  =  (pblp + omega*dt) - bclp_out 
-            if( pressure_deficit.le.0 ) then
-
-               !! write(*,*) "  We have achieved CI  ", dd,tt, tbm_out, bclp_out/1e2, pressure_deficit/1e2
-               TBM     (dd,ee,yy,xx)  =  tbm_out
-               BCLP    (dd,ee,yy,xx)  =  bclp_out
-               TimeOfCI(dd,ee,yy,xx)  =  tt * 1.0
-
-               !!!!add CAPE calculation later to figure out some sort of intensity
-               !call calculate_temperature(tbm_out, ppack, nlev1, missing, tbcl_out)
-               !call calc_cape( nlev1, tpack, qpack, ppack, tbcl_out, qbcl_out, bclp_out, CAPE(dd,ee,yy,xx), missing )
-
-               exit time_of_day
-            end if
-!!! Remember tpack and qpack need to be re-assigned  qpack = newQhum
-!!! Add an omega feature to calculating CI
-!!! make sure to define all these variables
-!!! define what ef is -- maybe pass it in?
-!!! exit this time_of_day loop if CI occurs
-!!! clean up code?
-
-         end do time_of_day
-
-
-      end do day_loop
-      end do ef_loop
-      end do long_loop
-      end do lati_loop
-
-
-
-end subroutine Evaluate_CI
-
-
-
-
-!---------------------------------------------------------------------------------
-!
-! subroutines:  calculates buoyant condensation level and basic variables (THETA_BM; TDEF)
-!
-!---------------------------------------------------------------------------------
-subroutine hcfloop ( nlev, nlat, nlon, nday, missing, T, P, Q, t2m, q2m, psfc, TBM, TDEF, BCLP, QBCL )
-
-   implicit none
-!
-! Input/Output Variables
-!
-   integer, intent(in  )                                  ::  nlev        ! *** # of atmospheric levels
-   integer, intent(in  )                                  ::  nlat        ! *** # of horizontal grid size
-   integer, intent(in  )                                  ::  nlon        ! *** # of horizontal grid size
-   integer, intent(in  )                                  ::  nday        ! *** # of horizontal grid size
-   real(8), intent(in  )                                  ::  missing     ! *** Missing values
-   real(8), intent(in  ), dimension(     nlev          )  ::  P           ! *** Pressure (level) [Pa]
-   real(8), intent(in  ), dimension(nday,nlev,nlat,nlon)  ::  T           ! *** Temperature (level), [K]
-   real(8), intent(in  ), dimension(nday,nlev,nlat,nlon)  ::  Q           ! *** Specific Humidity (level) [kg/kg]
-
-   real(8), intent(in  ), dimension(nday     ,nlat,nlon)  ::  t2m         ! *** 2-m temperature [K]
-   real(8), intent(in  ), dimension(nday     ,nlat,nlon)  ::  q2m         ! *** 2-m specific humidity [kg/kg]
-   real(8), intent(in  ), dimension(nday     ,nlat,nlon)  ::  psfc        ! *** surface pressure [Pa]
-
-   real(8), intent(out ), dimension(nday     ,nlat,nlon)  ::  TBM         ! *** buoyant mixing pot. temp (convective threshold) [K]
-   real(8), intent(out ), dimension(nday     ,nlat,nlon)  ::  TDEF        ! *** pot. temp deficit need to initiate [K]
-   real(8), intent(out ), dimension(nday     ,nlat,nlon)  ::  BCLP        ! *** pressure of buoyant condensation level [Pa]
-   real(8), intent(out ), dimension(nday     ,nlat,nlon)  ::  QBCL        ! *** Specific Humidity at bcl [kg/kg]
-
-
-!
-! Local variables
-!
-   integer                    ::  xx, yy, dd, nlev1
-   real(8), dimension(nlev+1) ::  ppack, tpack, hpack, qpack
-   real(8)                    ::  pblp
-
-!-----------------------------------------------------------------------------
-
-      !-----------------------------------------------------------------------------
-      !-- Initialize output variables
-      !-----------------------------------------------------------------------------
-      nlev1 =  nlev + 1
-      TBM   =  missing
-      TDEF  =  missing
-      BCLP  =  missing
-      QBCL  =  missing
-      
-
-      !-----------------------------------------------------------------------------
-      !-- Loop over time, lat, and lon
-      !-----------------------------------------------------------------------------
-      lati_loop: do yy = 1,nlat 
-      long_loop: do xx = 1,nlon
-      days_loop: do dd = 1,nday
-
-
-         !--------------------------------------
-         !-- Append 2-m quantiy to the profile 
-         !--------------------------------------
-         call packIt(T    (dd,:,yy,xx), t2m(dd  ,yy,xx) , nlev   , nlev1, &
-                     psfc (dd  ,yy,xx), P               , missing, tpack  )
-
-         call packIt(Q    (dd,:,yy,xx), q2m(dd  ,yy,xx) , nlev   , nlev1, &
-                     psfc (dd  ,yy,xx), P               , missing, qpack  )
-
-         call packIt(P                , psfc(dd  ,yy,xx), nlev   , nlev1, &
-                     psfc (dd  ,yy,xx), P               , missing, ppack  )
-
-
-         !-----------------------------------------------------------------------------
-         !-- Calculate the height above ground [m]
-         !-----------------------------------------------------------------------------
-         call calculate_height_above_ground (tpack, ppack, nlev1, missing, hpack)
-
-
-         !-----------------------------------------------------------------------------
-         !-- Calcuate the boundary layer top variables but with no extra water vapor
-         !-- added to the column
-         !-----------------------------------------------------------------------------
-!         call pblHeat ( nlev1, missing, Theta, ppack, hpack, pblp, pbl_theta, pblh )
-
-
-         !-----------------------------------------------------------------------------
-         !-- Calcuate the HCF variables but with no extra water vapor
-         !-- added to the column
-         !-----------------------------------------------------------------------------
-!        call hcfcalc ( nlev , missing, tmp(:,xx), press(:,xx), qhum(:,xx), hgt(:,xx), PBLP(xx), TBM(xx), TDEF(xx), BCLP(xx) )
-         call hcfcalc ( nlev1, missing, tpack, ppack, qpack, hpack, pblp, &
-                        TBM(dd,yy,xx), TDEF(dd,yy,xx), BCLP(dd,yy,xx), QBCL(dd,yy,xx) )
-
-
-      end do days_loop
-      end do long_loop
-      end do lati_loop
-
-
-
-end subroutine hcfloop
-
-
-
 
 
 
@@ -2951,8 +2620,11 @@ end subroutine pbl_gradient
 
 !----------------------------------------------------------------------------------------------
 !
-! function: Works in concert with the add_sensible_heat subroutine.  Once the heat is added
-!           then find the height where the NEW pbl theta intersects the profile
+! function: Adds the sensible and latent heat fluxes into the column.  This includes growing the
+!           PBL and associated mixing. The order is:
+!           1) Add sensible heat to the exisiting PBL
+!           2) Find the new atmospheric profile that includes mixing
+!           3) Then injecting the latent heat flux into the newly formed atmospheric profile
 !
 !----------------------------------------------------------------------------------------------
 subroutine add_surface_fluxes (temperature, height, pressure, qhum, pblp, sensible, latent, dt, nlev, missing, &
@@ -2971,33 +2643,81 @@ subroutine add_surface_fluxes (temperature, height, pressure, qhum, pblp, sensib
       real(8), intent(out)  ::  new_qhum       (nlev)  !*** updated specific humidity profile after adding latent heat flux [kg/kg]
       real(8), intent(out)  ::  new_pblp               !*** updated pressure at the top of the boundary layer [Pa]
 
-      real(8)               ::  theta(nlev), new_pbl_theta, new_pblh
+      real(8)               ::  theta(nlev), new_pbl_theta, new_pblh, evapotrans
 
-      call get_new_pbl_by_adding_sh(     temperature, pressure, pblp, sensible, dt, nlev, missing, new_temperature)
-      call potentialTemperature    ( new_temperature, pressure, nlev, missing, theta)
-      call pbl_gradient            ( nlev, missing, theta, pressure, height, new_pblp, new_pbl_theta, new_pblh )
-      call inject_lh_into_pbl      ( new_pblp, latent, pressure, qhum, nlev, missing, new_qhum )
+      call get_new_pbl_by_adding_sh    (     temperature, pressure, pblp, sensible, dt, nlev, missing, new_temperature)
+      call theta_with_surface_reference( new_temperature, pressure, nlev, missing, theta)
+      call pbl_gradient                ( nlev ,  missing, theta, pressure, height, new_pblp, new_pbl_theta, new_pblh )
+      call latent_heat_to_evapotrans   ( new_temperature(1), latent, dt, missing, evapotrans)
+      call inject_lh_into_pbl          ( new_pblp, evapotrans, pressure, qhum, nlev, missing, new_qhum )
 
 end subroutine add_surface_fluxes
 
 
 
 
+!----------------------------------------------------------------------------------------------
+!
+! function: Assess whether or not moist convection has been initiated
+!           Specifically it uses the pressure of the BCL and compares it to the boundary layer pressure
+!           If (OMEGA_BL * dt) + P_BL - P_BCL <= 0 then moist convection is said to occur
+!
+!           Here OMEGA_BL is the maximum upward pressure velocity (i.e. most negative) within
+!           at or below the boundary layer. Including OMEGA_BL allows for the dynamic synoptic
+!           forcing to be included in the Heated Condensation Framework concept of CI.
+!
+!----------------------------------------------------------------------------------------------
+subroutine is_there_moist_convection(temperature, height, pressure, qhum, pblp,          &
+                                     sensible   , latent, omega   , dt  , nlev, missing, &
+                                     pressure_deficit, t_updated, q_updated, pblp_updated )
 
-!!======>>  Initialize
-!subroutine potentialTemperature( temperature, pressure, nlev, missing, theta)
-!subroutine pbl_gradient        ( nlev, missing, theta, pressure, height, pblp, pbl_theta, pblh )
-      
+      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  qhum       (nlev)      !*** specific humidity profile [kg/kg]
+      real(8), intent(in )  ::  height     (nlev)      !*** height above ground profile [m]
+      real(8), intent(in )  ::  sensible, latent       !*** surface sensible and latent heat flux [W/m2]
+      real(8), intent(in )  ::  pblp                   !*** pressure at the top of the boundary layer [Pa]
+      real(8), intent(in )  ::  dt                     !*** model time step in seconds [s]
+      real(8), intent(in )  ::  omega      (nlev)      !*** pressure velocity within PBL [Pa/s]
+      real(8), intent(in )  ::  missing                !*** missing values
+      real(8), intent(out)  ::  pressure_deficit       !*** a measure saturation at the top of PBL [Pa]
+      real(8), intent(out)  ::  t_updated  (nlev)      !*** updated temperature profile [K]
+      real(8), intent(out)  ::  q_updated  (nlev)      !*** updated specific humidity profile [kg/kg]
+      real(8), intent(out)  ::  pblp_updated           !*** new pressure at the top of the boundary layer [Pa]
 
-!!======>>  Iterate over this
-!call depthPressure    (pressure, nlev, missing, dp)
-!call maxIndex         ( nlev, 1, (pressure.gt.pblp  .and.  pressure.ne.missing)    , ipbl   )
-!call sumIt            ( nlev, 1, (pressure.gt.pblp  .and.  pressure.ne.missing), dp, pbl_depth  )
-!subroutine column_energy              ( temperature, pressure, nlev, missing, pbl_energy )
-!subroutine add_sensible_heat_energy   ( pbl_energy , sensible_heat_flux, dt, missing, new_pbl_energy )
-!subroutine reconstruct_pbl_temperature( temperature, height, pressure, new_pbl_energy, pbl_depth, ipbl, nlev, missing, new_temperature)
-!subroutine potentialTemperature( new_temperature, pressure, nlev, missing, theta)
-!subroutine pbl_gradient        ( nlev, missing, theta, pressure, height, pblp, pbl_theta, pblh )
-!subroutine inject_and_mix      ( pblp, latent_heat_flux, pressure, qhum, nlev, missing, new_qhum )
-!temperature = new_temperature
-!!!!!!!!!
+      real(8)               ::  updated_qhum(nlev), updated_temp(nlev), updated_pblp
+      real(8)               ::  tbm, tdef, bclp, qbcl
+      real(8)               ::  max_omega
+
+
+      !-----------------------------------------------------------------------------
+      !----- Updated the profiles of temperature and humidity after injecting
+      !----- the surface senisble and latent heat fluxes
+      !-----------------------------------------------------------------------------
+      call add_surface_fluxes (temperature, height, pressure, qhum, pblp, sensible, latent, dt, nlev, missing, &
+                               updated_temp, updated_qhum, updated_pblp )
+
+      !-----------------------------------------------------------------------------
+      !----- Calculate HCF variables in new system
+      !-----------------------------------------------------------------------------
+      call hcfcalc ( nlev, missing, updated_temp, pressure, updated_qhum, height, pblp, tbm, tdef, bclp, qbcl )
+
+      !-----------------------------------------------------------------------------
+      !----- Calculate Maximum Omega Below PBL
+      !-----------------------------------------------------------------------------
+      call max_over_layer( omega, updated_pblp, pressure, nlev, missing, max_omega )
+
+      !-----------------------------------------------------------------------------
+      !----- Check for CI
+      !-----------------------------------------------------------------------------
+      pressure_deficit  =  (updated_pblp + max_omega*dt) - bclp
+      t_updated         =  updated_temp
+      q_updated         =  updated_qhum
+      pblp_updated      =  updated_pblp
+
+
+end subroutine is_there_moist_convection
+
+
+

@@ -453,16 +453,15 @@ NOTE: This is only used internally in the get_new_pbl_by_adding_sh function
 ---get_new_pbl_by_adding_sh
 '''
 def test_get_new_pbl_by_adding_sh():
-    pass
-'''
     nlev            =  300
     R               =  287.
     grav            =  9.81
     cp              =  1005.7
     dry_lapse       =  -grav/cp
     missing         =  -99999.
-    sensible        =  0.0
+    sensible        =  200.0
     dt              =  60. * 10.
+
     height          =  np.linspace(0,5,nlev) * 1e3
     temperature     =  np.zeros(nlev)
     pressure        =  np.zeros(nlev)
@@ -474,37 +473,22 @@ def test_get_new_pbl_by_adding_sh():
         Tavg            = 0.5*(temperature[zz]+temperature[zz-1])
         pressure   [zz] = pressure[zz-1] * np.exp( -(grav*dz)/(R*Tavg) )
  
-    # Try a medium height boundary layer
-    pblp              =  93000.
-    constructed_temp  =  get_new_pbl_by_adding_sh(temperature,pressure,height,pblp,sensible,dt,missing)
-    absolute_error    =  constructed_temp - temperature
-    percent_error     =  np.abs( absolute_error / temperature ) * 1e2
-    assert all(absolute_error <= 0.05)
-    assert all(percent_error  <= 0.05)
-
-    # Try a boundary layer within the 1st model layer
-    pblp              =  99904.7995543
-    constructed_temp  =  get_new_pbl_by_adding_sh(temperature,pressure,height,pblp,sensible,dt,missing)
-    absolute_error    =  constructed_temp - temperature
-    percent_error     =  np.abs( absolute_error / temperature ) * 1e2
-    assert all(absolute_error <= 0.05)
-    assert all(percent_error  <= 0.05)
-
-'''
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    # Try a few initial boundary layer depths Medium, High, and two shallow ones
+    #    pblps  =  np.array( [93000, 80000, 99808, 99810] )
+    pblps  =  np.array( [ pp+10 for pp in pressure[1:]] )
+    for pblp in pblps:
+        theta                  =  np.zeros(nlev)
+        theta                  =  300. + theta
+        theta                  =  np.where( pressure >= pblp, theta, theta + 1.0 )
+        temp                   =  calculate_temperature(theta,pressure,missing)
+        constructed_temp       =  get_new_pbl_by_adding_sh(temp,pressure,pblp,sensible,dt,missing)
+        initial_column_energy  =  column_energy( temp            , pressure, missing )
+        new_column_energy      =  column_energy( constructed_temp, pressure, missing )
+        absolute_error         =  (new_column_energy - initial_column_energy) - (sensible * dt)
+        percent_error          =  np.abs( absolute_error / (sensible * dt) ) * 1e2
+        print('  pblp={}      abs =  {}            percent = {}        '.format(pblp,absolute_error,percent_error))
+        print('  Old Energy={}      New Energy={}   Difference should be close to {} J/m2'.format(initial_column_energy,new_column_energy,sensible*dt))
+        assert percent_error  <= 2.0
 
 
 
@@ -512,26 +496,26 @@ def test_get_new_pbl_by_adding_sh():
 
 
 '''
-  ------  >>>  IN PROGRESS  <<<  ------
-  ------  >>>  IN PROGRESS  <<<  ------
-  ------  >>>  IN PROGRESS  <<<  ------
-Test to see if when given an atmospheric profile of temperature,
-the code can return a PBL energy [J/m2] and then reconstruct the original
-temperature profile.  This shows the integration works and no info is lost
-during the transform.
-----reconstruct_temperature----
+Test the totality of adding surface fluxes to the column.
+This test focuses on conservation. Specifically whether the total column
+thermal energy and moisture content change exactly the amount delivered
+through the sensible and latent heat fluxes respectively.
+---test_add_surface_fluxes
 '''
-'''
-def test_pbl_energy_temp_reconstruction():
+def test_add_surface_fluxes():
     nlev            =  300
     R               =  287.
     grav            =  9.81
     cp              =  1005.7
     dry_lapse       =  -grav/cp
     missing         =  -99999.
-    sensible        =  0.0
+    sensible        =  200.0
     dt              =  60. * 10.
+    latent          =  0.5
+
     height          =  np.linspace(0,5,nlev) * 1e3
+    qhum            =  np.ones (nlev)
+    qhum            =  qhum * 2e-3
     temperature     =  np.zeros(nlev)
     pressure        =  np.zeros(nlev)
     temperature[0]  =  300.0
@@ -542,32 +526,35 @@ def test_pbl_energy_temp_reconstruction():
         Tavg            = 0.5*(temperature[zz]+temperature[zz-1])
         pressure   [zz] = pressure[zz-1] * np.exp( -(grav*dz)/(R*Tavg) )
  
-    # Try a medium height boundary layer
-    pblp              =  93000.
-    constructed_temp  =  get_new_pbl_by_adding_sh(temperature,pressure,height,pblp,sensible,dt,missing)
-    absolute_error    =  constructed_temp - temperature
-    percent_error     =  np.abs( absolute_error / temperature ) * 1e2
-    assert all(absolute_error <= 0.05)
-    assert all(percent_error  <= 0.05)
+    # Try a few initial boundary layer depths Medium, High, and two shallow ones
+#    pblps  =  np.array( [93000, 80000, 99808, 99810] )
+    pblps  =  np.array( [ pp+10 for pp in pressure[1:]] )
+    for pblp in pblps:
+        theta                  =  np.zeros(nlev)
+        theta                  =  300. + theta
+        theta                  =  np.where( pressure >= pblp, theta, theta + 1.0 )
+        temp                   =  calculate_temperature(theta,pressure,missing)
+        newT,newQ,newPBLP      =  add_surface_fluxes(temp,height,pressure,qhum,pblp,sensible,latent,dt,missing)
+        initial_column_energy  =  column_energy( temp , pressure, missing )
+        new_column_energy      =  column_energy( newT , pressure, missing )
+        absolute_error         =  (new_column_energy - initial_column_energy) - (sensible * dt)
+        percent_error          =  np.abs( absolute_error / (sensible * dt) ) * 1e2
+        print('  pblp={}      abs =  {}            percent = {}        '.format(pblp,absolute_error,percent_error))
+        print('  Old Energy={}      New Energy={}   Difference should be close to {} J/m2'.format(initial_column_energy,new_column_energy,sensible*dt))
+        assert percent_error  <= 2.0
 
-    # Try a boundary layer within the 1st model layer
-    pblp              =  99904.7995543
-    constructed_temp  =  get_new_pbl_by_adding_sh(temperature,pressure,height,pblp,sensible,dt,missing)
-    absolute_error    =  constructed_temp - temperature
-    percent_error     =  np.abs( absolute_error / temperature ) * 1e2
-    assert all(absolute_error <= 0.05)
-    assert all(percent_error  <= 0.05)
+
+
+
+
+
+
+
+
+
+
 
 '''
-
-
-
-
-
-'''
-python
-import numpy as np
-from HandyMet import *
 from matplotlib import pyplot as plt
 from matplotlib import colors
 from matplotlib import pylab
@@ -576,489 +563,5 @@ from matplotlib import animation
 import matplotlib.cm as cm
 from pylab import savefig, figure
 style.use('fivethirtyeight')
-
-nlev            =  300
-R               =  287.
-grav            =  9.81
-cp              =  1005.7
-dry_lapse       =  -grav/cp
-alpha           =  R/cp
-a_plus_one      =  alpha + 1
-missing         =  -99999.
-sensible        =  0.0
-dt              =  60. * 10.
-
-theta           =  np.zeros(nlev)
-theta           =  300. + theta
-height          =  np.linspace(0,5,nlev) * 1e3
-temperature     =  np.zeros(nlev)
-pressure        =  np.zeros(nlev)
-temperature[0]  =  300.
-pressure[0]     =  100000.0
-for zz in range(1,nlev):
-    temperature[zz] = temperature[zz-1]  +  dry_lapse*(height[zz]-height[zz-1])
-    dz              = height[zz]-height[zz-1]
-    Tavg            = 0.5*(temperature[zz]+temperature[zz-1])
-    pressure   [zz] = pressure[zz-1] * np.exp( -(grav*dz)/(R*Tavg) )
-
-# Try a medium height boundary layer
-pblp              =  93000.
-theta             =  np.where( pressure >= pblp, theta, theta + 1.0 )
-temp              =  calculate_temperature(theta,pressure,missing)
-
-constructed_temp  =  get_new_pbl_by_adding_sh(temp,pressure,height,pblp,sensible,dt,missing)
-absolute_error    =  constructed_temp - temp
-percent_error     =  np.abs( absolute_error / temp ) * 1e2
-theta             =  potentialtemperature(            temp,pressure,missing)
-theta_new         =  potentialtemperature(constructed_temp,pressure,missing)
-ipbl              =  maxindex     ( 1, np.where(pressure>=pblp, True,False) )
-dp                =  depthpressure( pressure, missing )
-pbl_depth         =  sumit        ( 1, np.where(pressure>=pblp, True,False), dp )
-pbl_energy        =  column_energy(temp[:ipbl+1], pressure[:ipbl+1], missing )
-
-numer  =  E * grav/cp
-denom  =  np.power(1/pressure[0],alpha) * ( np.power(pressure[0],a_plus_one) - np.power(pressure[ipbl],a_plus_one) ) / (a_plus_one)
-newTheta = numer/denom
-
-
-plt.plot(theta    ,height/1e3, 'xk')
-plt.plot(theta_new,height/1e3, 'xr')
-plt.plot(newTheta ,height/1e3, 'xb')
-plt.plot(newTheta1,height/1e3, 'xg')
-plt.plot(newTheta2,height/1e3, 'xy')
-plt.plot(newTheta3,height/1e3, 'xk')
-plt.show()
-
-'''
-
-
-
-
-
-
-
-
-
-
-
-
-'''
-python
-import numpy as np
-from HandyMet import *
-from matplotlib import pyplot as plt
-from matplotlib import colors
-from matplotlib import pylab
-from matplotlib import style
-from matplotlib import animation
-import matplotlib.cm as cm
-from pylab import savefig, figure
-style.use('fivethirtyeight')
-
-nlev            =  300
-R               =  287.
-grav            =  9.81
-cp              =  1005.7
-dry_lapse       =  -grav/cp
-missing         =  -99999.
-sensible        =  0.0
-dt              =  60. * 10.
-height          =  np.linspace(0,5,nlev) * 1e3
-temperature     =  np.zeros(nlev)
-pressure        =  np.zeros(nlev)
-temperature[0]  =  300.0
-pressure[0]     =  100000.0
-for zz in range(1,nlev):
-    temperature[zz] = temperature[zz-1]  +  dry_lapse*(height[zz]-height[zz-1])
-    dz              = height[zz]-height[zz-1]
-    Tavg            = 0.5*(temperature[zz]+temperature[zz-1])
-    pressure   [zz] = pressure[zz-1] * np.exp( -(grav*dz)/(R*Tavg) )
-
-# Try a medium height boundary layer
-pblp              =  93000.
-temp              =  np.where( pressure >= pblp, temperature, temperature + 1.0 )
-constructed_temp  =  get_new_pbl_by_adding_sh(temp,pressure,height,pblp,sensible,dt,missing)
-absolute_error    =  constructed_temp - temp
-percent_error     =  np.abs( absolute_error / temp ) * 1e2
-theta             =  potentialtemperature(            temp,pressure,missing)
-theta_new         =  potentialtemperature(constructed_temp,pressure,missing)
-ipbl              =  maxindex     ( 1, np.where(pressure>=pblp, True,False) )
-dp                =  depthpressure( pressure, missing )
-pbl_depth         =  sumit        ( 1, np.where(pressure>=pblp, True,False), dp )
-
-
-plt.plot(theta    ,height/1e3, 'xk')
-plt.plot(theta_new,height/1e3, 'xr')
-plt.plot(newTheta ,height/1e3, 'xb')
-plt.plot(newTheta1,height/1e3, 'xg')
-plt.plot(newTheta2,height/1e3, 'xy')
-plt.plot(newTheta3,height/1e3, 'xk')
-plt.show()
-
-assert all(absolute_error <= 0.05)
-assert all(percent_error  <= 0.05)
-
-# Try a boundary layer within the 1st model layer
-pblp              =  99904.7995543
-temp              =  np.where( pressure >= pblp, temperature, temperature + 1.0 )
-constructed_temp  =  get_new_pbl_by_adding_sh(temp,pressure,height,pblp,sensible,dt,missing)
-absolute_error    =  constructed_temp - temp
-percent_error     =  np.abs( absolute_error / temp ) * 1e2
-assert all(absolute_error <= 0.05)
-assert all(percent_error  <= 0.05)
-'''
-
-
-
-
-'''
-def error_checks(temperature,pressure,height,pblp,sensible,dt,missing):
-    newT  =  get_new_pbl_by_adding_sh(temperature,pressure,height,pblp,sensible,dt,missing)
-    newT1 =  get_new_pbl_by_adding_sh(newT       ,pressure,height,pblp,sensible,dt,missing)
-    newT2 =  get_new_pbl_by_adding_sh(newT1      ,pressure,height,pblp,sensible,dt,missing)
-    newT3 =  get_new_pbl_by_adding_sh(newT2      ,pressure,height,pblp,sensible,dt,missing)
-    error   = newT  - temperature
-    error1  = newT1 - temperature
-    error2  = newT2 - temperature
-    error3  = newT3 - temperature
-    perror  = error  / temperature * 1e2
-    perror1 = error1 / temperature * 1e2
-    perror2 = error2 / temperature * 1e2
-    perror3 = error3 / temperature * 1e2
-    return newT, newT1, newT2, newT3, error, error1, error2, error3, perror, perror1, perror2, perror3
-'''
-
-
-
-'''
-python
-import numpy as np
-from HandyMet import *
-
-nlev            =  300
-R               =  287.
-grav            =  9.81
-cp              =  1005.7
-dry_lapse       =  -grav/cp
-missing         =  -99999.
-height          =  np.linspace(0,5,nlev) * 1e3
-temperature     =  np.zeros(nlev)
-pressure        =  np.zeros(nlev)
-temperature[0]  =  300.0
-pressure[0]     =  100000.0
-for zz in range(1,nlev):
-    temperature[zz] = temperature[zz-1]  +  dry_lapse*(height[zz]-height[zz-1])
-    dz              = height[zz]-height[zz-1]
-    Tavg            = 0.5*(temperature[zz]+temperature[zz-1])
-    pressure   [zz] = pressure[zz-1] * np.exp( -(grav*dz)/(R*Tavg) )
-
-#pblp              =  99904.7995543
-pblp              =  93000.
-dp                =  depthpressure(pressure,missing)
-constructed_temp  =  reconstruct_temperature(temperature,pressure,height,pblp,missing)
-absolute_error    =  constructed_temp - temperature
-percent_error     =  np.abs( absolute_error / temperature ) * 1e2
-
-'''
-#pressure, pblp, temperature, height
-
-
-'''
-Test Hi-resoluation real-world PBL from
-Craig Enhanced Sounding Data
-'''
-#def test_hi_res_add_sensible_heat():
-#    missing         =  -99999.
-#    theta           =  np.linspace(0,10,11) + 1
-#    dt              =  1.0
-#    sensible_heat   =  1.0
-#    pbl_depth       =  9.81/1005.7
-#    newT            =  add_sensible_heat (theta[0], sensible_heat, pbl_depth, dt, missing )
-#    assert newT == 2 
-
-
-
-
-
-'''
-nlev         =  4
-missing      =  -99999.
-mixLevel     =  99901.9
-mixing_ratio =  np.ones( nlev )/10.
-pressure     =  np.array( [100000, 99901.9, 95000, 80000] )
-flux_in      =  1.0
-dp           =  depthpressure(pressure, missing)
-mixedprofile =  inject_and_mix(mixLevel,flux_in,pressure,mixing_ratio,dp,missing)
-
-
-nlev         =  8
-missing      =  -99999.
-mixLevel     =  900.
-layer_depth  =  100.
-tracer       =  np.ones( nlev )
-pressure     =  np.linspace(1000,300,nlev)
-flux_in      =  1.0
-dp           =  depthpressure(pressure, missing)
-new_density  =  inject_moisture(tracer,flux_in,mixLevel,pressure,dp,layer_depth,missing)
-'''
-
-
-'''
-Code not test yet:
----- total_density
----- packIt
----- assign_layer
----- avg_over_layer
----- add_sensible_heat
----- idealGas_P
----- virtualTemp   
----- Latent_heat_of_condensation
----- midLevel
----- trueMidLevel
----- surfacePressure
----- virtualPotentialTemp
----- virtualTemperature
----- layerDepth
----- logMiss
----- inject_and_mix
-----   
-
-'''
-
-
-
-
-
-'''
-missing         =  -99999.
-theta           =  np.linspace(0,10,11) + 1
-dt              =  1.0
-sensible_heat   =  1.0
-pbl_depth       =  9.81/1005.7
-newT            =  add_sensible_heat (theta[0], sensible_heat, pbl_depth, dt, missing )
-
-
-missing         =  -99999.
-temperature     =  np.linspace(0,10,11)
-height          =  np.linspace(0,10,11)
-pressure        =  temperature*1000 + (90000.)
-pressure        =  pressure[::-1]
-pblh            =  3.0
-dt              =  1.0
-sensible_heat   =  20.0
-pbl_depth       =  0.1950879984
-newT            =  add_sensible_heat (temperature, sensible_heat, pbl_depth, height, pblh, dt, missing )
-'''
-
-
-
-
-'''
-Test to see if the change in integrated column heat is equal 
-to the addition of surface sensible heat
-'''
-'''
-def test_change_in_column_heat():
-    # desired heat change
-    sensible_heat  =  200.0
-    dt             =  60.0 * 10.0
-    change_in_heat =  sensible_heat * dt
-    
-    
-    # Assume a linear decrease in temperature with pressure (makes math easier)
-    pressure        =  np.linspace(1000,350,nlev)
-    pressure        =  pressure * 1e2
-    temperature     =  9.8e-4 * pressure  +  200.0
-    
-    
-    assert pblt == 295
-
-'''
-
-
-'''
-Test missing values
-def test_PBL_missing_value():
-    # common variables across tests
-    nlev            =  30
-    theta           =  np.zeros( nlev )
-    missing         =  -99999.
-    theta[0:3]      =  missing
-    theta[3:]       =  np.linspace(300,430,27)
-    pressure        =  np.linspace(1000,350,nlev)
-    pressure        =  pressure * 1e2
-
-    # test with buoyancy
-    theta[3]        =  322.5
-    theta           =  packit( theta[1:], theta[0], nlev-1, pressure[0], pressure[1:], missing ) 
-    temperature     =  calculate_temperature        (theta      ,pressure,missing)
-    height          =  calculate_height_above_ground(temperature,pressure,missing)
-    pblp,pblt,pblh  =  pblheat                      (missing    ,theta   ,pressure,height)
-    assert pblt == 322.5
-'''
-
-
-
-'''
-CURRENTLY HERE
-python
-import numpy as np
-import pandas as pd
-import sys
-from HandyMet import *
-
-from matplotlib import pyplot as plt
-from matplotlib import colors
-from matplotlib import pylab
-from matplotlib import style
-from matplotlib import animation
-import matplotlib.cm as cm
-from pylab import savefig, figure
-style.use('fivethirtyeight')
-
-
-test_file       =  './test_data/Hi_res_test_profile.20150815.113000.csv'
-df              =  pd.read_csv(test_file)
-pressure        =  df["Pressure"]
-temperature     =  df["Temperature"]
-height          =  df["Height"]
-qhum            =  df["Spc Humidity"]
-nlev            =  df.shape[0]
-missing         =  -99999.
-dt              =  60. * 10.
-sensible        =  0.0
-latent          =  0.0
-original_theta  =  potentialtemperature(temperature, pressure, missing)
-pblp,pblt,pblh  =  pbl_gradient(missing,original_theta,pressure,height)
-old_energy      =  column_energy(temperature,pressure,missing)
-new_energy      =  old_energy
-CE_old          =  column_energy_levels(temperature,pressure,missing)
-CE_new          =  column_energy_levels(temperature,pressure,missing)
-
-energies  =  []
-new_T     =  temperature
-new_Q     =  qhum
-new_pblp  =  pblp
-for tt in range(0,50):
-    print( '  -------------------->>>>>>    {}      {}                 {}       '.format(tt,new_pblp,new_energy-old_energy) )
-    new_T                 =  get_new_pbl_by_adding_sh( new_T, pressure, height, new_pblp, sensible, dt, missing)
-    new_theta             =  potentialtemperature    ( new_T, pressure, missing)
-    new_energy            =  column_energy           ( new_T, pressure, missing)
-    if tt == 0: 
-        old_energy = new_energy
-
-
-
-    for zz,ee in enumerate(CE_new[:10]):
-        print( '  {}    {}    '.format(zz,CE_new[zz]-CE_old[zz]) )
-    CE_new                =  column_energy_levels(new_T,pressure,missing)
-    print(" ")
-    print(" ")
-    print(" ")
-    print(" ")
-    print(" ")
-
-
-#    new_T,new_Q,new_pblp  =  add_surface_fluxes      ( new_T,height,pressure,new_Q,new_pblp,sensible,latent,dt,missing)
-
-#    energies.append(new_energy - old_energy)
-#    print( '  -------------------->>>>>>    {}      {}                 {}         {}'.format(tt,new_pblp,new_energy-old_energy,sensible*dt) )
-#    plt.plot(original_theta,height/1e3,'xk')
-#    plt.plot(new_theta     ,height/1e3,'or')
-#    plt.show()
-
-plt.plot(range(0,21),energies,'xk')
-plt.show()
-'''
-
-
-
-
-
-
-
-
-
-'''
-import numpy as np
-import numpy.ma as ma
-import pandas as pd
-import sys
-from HandyMet import *
-
-from matplotlib import pyplot as plt
-from matplotlib import colors
-from matplotlib import pylab
-from matplotlib import style
-from matplotlib import animation
-import matplotlib.cm as cm
-from pylab import savefig, figure
-style.use('fivethirtyeight')
-
-dt              =  3 * 3600.0
-sensible_heat   =  700.0
-
-test_file       =  './test_data/Hi_res_test_profile.20150815.203000.csv'
-df              =  pd.read_csv(test_file)
-pressure        =  df["Pressure"]
-temperature     =  df["Temperature"]
-height          =  df["Height"]
-nlev            =  df.shape[0]
-missing         =  -99999.
-theta           =  potentialtemperature(temperature, pressure, missing)
-pblp,pblt,pblh  =  pbl_gradient(missing,theta,pressure,height)
-ilower          =  maxindex(1, np.where( pressure>=pblp, True, False) )
-pbl_energy      =  column_energy(temperature[:ilower],pressure[:ilower],missing)
-new_pbl_energy  =  add_sensible_heat_energy(pbl_energy,sensible_heat,dt,missing)
-dp              =  depthpressure(pressure, missing)
-new_temperature = reconstruct_pbl_temperature(temperature,height,dp,pbl_energy,ilower,missing)
-add_temperature = reconstruct_pbl_temperature(temperature,height,dp,new_pbl_energy,ilower,missing)
-
-theta           =  potentialtemperature(    temperature, pressure, missing)
-comp_theta      =  potentialtemperature(new_temperature, pressure, missing)
-add_theta       =  potentialtemperature(add_temperature, pressure, missing)
-
-avg_T  =  np.avg(temperature[:ilower])
-newT   =  np.array( [ avg_T - (g_cp * (height[zz]-(0.5 * (height[ilower] + height[0])))) if zz < ilower else temperature[zz] for zz in range(0,len(height)) ] )
-
-f, ax1 = plt.subplots(1,1)
-ax1.plot(comp_theta, height/1e3, '-k')
-ax1.plot(     theta, height/1e3, 'ob')
-ax1.plot( add_theta, height/1e3, 'or')
-ax1.set_ylim([0,3])
-ax1.set_xlim([280,320])
-plt.show()
-
-
-f, ax1 = plt.subplots(1,1)
-ax1.plot(new_temperature, height/1e3, '-k')
-ax1.plot(    temperature, height/1e3, 'ob')
-ax1.plot(add_temperature, height/1e3, 'or')
-ax1.plot( newT          , height/1e3, 'ow')
-ax1.set_ylim([0,3])
-ax1.set_xlim([280,310])
-plt.show()
-
-
-dtdp         =  smoothed_lapse_rate(theta,pressure,missing)
-f, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True)
-ax1.plot(theta         , pressure/1e2         , '-k')
-ax1.plot(smoothed_theta, smoothed_pressure/1e2, '--r')
-ax1.set_ylim([1000,750])
-ax1.set_xlim([300 ,312])
-
-ax2.plot(dtdp, pressure/1e2, 'ob')
-ax2.set_ylim([1000   , 750  ])
-ax2.set_xlim([-0.004,0.004])
-plt.gca().invert_yaxis()
-
-ax3.plot(dtdp, smoothed_pressure/1e2, 'ob')
-ax3.set_ylim([1000   , 750  ])
-ax3.set_xlim([-0.004,0.004])
-
-plt.show()
-del ax1
-del ax2
-del ax3
 '''
 
