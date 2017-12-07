@@ -792,7 +792,7 @@ end subroutine avg_over_layer
 
 !---------------------------------------------------------------------------------
 !
-! function: Average over a certain layer
+! function: Maximum over a certain layer
 !
 !---------------------------------------------------------------------------------
 subroutine max_over_layer (incoming, targetPressure, pressure, nlev, missing, outgoing )
@@ -807,6 +807,25 @@ subroutine max_over_layer (incoming, targetPressure, pressure, nlev, missing, ou
       outgoing  =  maxval(incoming, mask = incoming.ne.missing .and. pressure.ge.targetPressure)
 
 end subroutine max_over_layer
+
+
+!---------------------------------------------------------------------------------
+!
+! function: Minimum over a certain layer
+!
+!---------------------------------------------------------------------------------
+subroutine min_over_layer (incoming, targetPressure, pressure, nlev, missing, outgoing )
+
+      integer, intent(in )  ::  nlev
+      real(8), intent(in )  ::  incoming(nlev), pressure(nlev)
+      real(8), intent(in )  ::  targetPressure
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  outgoing
+
+      outgoing  =  missing
+      outgoing  =  minval(incoming, mask = incoming.ne.missing .and. pressure.ge.targetPressure)
+
+end subroutine min_over_layer
 
 
 
@@ -2688,7 +2707,7 @@ subroutine is_there_moist_convection(temperature, height, pressure, qhum, pblp, 
 
       real(8)               ::  updated_qhum(nlev), updated_temp(nlev), updated_pblp
       real(8)               ::  tbm, tdef, bclp, qbcl
-      real(8)               ::  max_omega
+      real(8)               ::  min_omega
 
 
       !-----------------------------------------------------------------------------
@@ -2706,12 +2725,12 @@ subroutine is_there_moist_convection(temperature, height, pressure, qhum, pblp, 
       !-----------------------------------------------------------------------------
       !----- Calculate Maximum Omega Below PBL
       !-----------------------------------------------------------------------------
-      call max_over_layer( omega, updated_pblp, pressure, nlev, missing, max_omega )
+      call min_over_layer( omega, updated_pblp, pressure, nlev, missing, min_omega )
 
       !-----------------------------------------------------------------------------
       !----- Check for CI
       !-----------------------------------------------------------------------------
-      pressure_deficit  =  (updated_pblp + max_omega*dt) - bclp
+      pressure_deficit  =  (updated_pblp + min_omega*dt) - bclp
       t_updated         =  updated_temp
       q_updated         =  updated_qhum
       pblp_updated      =  updated_pblp
