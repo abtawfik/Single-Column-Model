@@ -50,7 +50,7 @@ subroutine Evaluate_CI( T    , Q    , P     , omega , itime                     
 ! Local variables
 !
    real(8), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, theta, omega_pack
-   real(8), dimension(nlev+1) ::  t_updated, q_updated
+   real(8), dimension(nlev+1) ::  t_updated, q_updated, p_updated
    real(8)                    ::  pblp, pbl_theta, pblh, latent_heat, sensible_heat   
    real(8)                    ::  pblp_updated, pressure_deficit, pw
    integer                    ::  xx, yy, dd, tt, ee
@@ -118,6 +118,7 @@ subroutine Evaluate_CI( T    , Q    , P     , omega , itime                     
             !-- Pack the omega variable to be same dimension as T,p,q, and h
             !-- Need to put this variable within the time loop to ensure that
             !-- omega varies throughout the day
+            !-- Update the pressure field using the omega [Pa/s]
             !-----------------------------------------------------------------------------
             call packIt(omega(dd,(tt/18)+1,:,yy,xx) , 0.0 , nlev   , nlev1      , &
                         psfc (dd            ,yy,xx) , P   , missing, omega_pack   )
@@ -128,7 +129,7 @@ subroutine Evaluate_CI( T    , Q    , P     , omega , itime                     
             call is_there_moist_convection(tpack, hpack, ppack, qpack, pblp,          &
                                            sensible_heat, latent_heat,                &
                                            omega_pack, dt, nlev1, missing, &
-                                           pressure_deficit, t_updated, q_updated, pblp_updated )
+                                           pressure_deficit, t_updated, q_updated, pblp_updated, p_updated )
 
             !-----------------------------------------------------------------------------
             !----- Output the desired variables when moist convective initiation occurs
@@ -152,6 +153,7 @@ subroutine Evaluate_CI( T    , Q    , P     , omega , itime                     
             !-----------------------------------------------------------------------------
             tpack  =  t_updated
             qpack  =  q_updated
+            ppack  =  p_updated
             pblp   =  pblp_updated
 
          end do time_of_day
@@ -263,6 +265,32 @@ subroutine add_sensible_heat_energy (pbl_energy, sensible_heat, dt, missing, new
       end if
 
 end subroutine add_sensible_heat_energy
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Add the omega pressure tendency to the static pressure field
+!
+!----------------------------------------------------------------------------------------------
+subroutine updated_pressure_with_omega(omega, pressure, dt, nlev,  missing, new_pressure)
+
+      integer, intent(in )  ::  nlev                !*** # of atmospheric levels
+      real(8), intent(in )  ::  omega   (nlev)      !*** pressure velocity [Pa/s]
+      real(8), intent(in )  ::  pressure(nlev)      !*** original pressure level [Pa]
+      real(8), intent(in )  ::  dt                  !*** time step [s]
+      real(8), intent(in )  ::  missing             !*** missing values
+      real(8), intent(out)  ::  new_pressure(nlev)  !*** updated pressure [Pa]
+
+      new_pressure  =  pressure
+      where( pressure.ne.missing  .and.  omega.ne.missing )
+         new_pressure  =  pressure + (dt * omega)
+      end where
+
+end subroutine updated_pressure_with_omega
+
+
 
 
 
@@ -826,6 +854,38 @@ subroutine min_over_layer (incoming, targetPressure, pressure, nlev, missing, ou
       outgoing  =  minval(incoming, mask = incoming.ne.missing .and. pressure.ge.targetPressure)
 
 end subroutine min_over_layer
+
+
+!---------------------------------------------------------------------------------
+!
+! function: Select the value of largest magnitude within a given layer
+!
+!---------------------------------------------------------------------------------
+subroutine most_influential_layer (incoming, targetPressure, pressure, nlev, missing, outgoing )
+
+      integer, intent(in )  ::  nlev
+      real(8), intent(in )  ::  incoming(nlev), pressure(nlev)
+      real(8), intent(in )  ::  targetPressure
+      real(8), intent(in )  ::  missing
+      real(8), intent(out)  ::  outgoing
+
+      real(8)               ::  minValue, maxValue
+
+      outgoing  =  missing
+      call min_over_layer (incoming, targetPressure, pressure, nlev, missing, minValue )
+      call max_over_layer (incoming, targetPressure, pressure, nlev, missing, maxValue )
+      if     ( minValue.ge.0  .and.  maxValue.ge.0 ) then
+         outgoing  =  maxValue
+      else if( minValue.le.0  .and.  maxValue.le.0 ) then
+         outgoing  =  minValue
+      else if( abs(minValue).ge.abs(maxValue) ) then
+         outgoing  =  minValue
+      else
+         outgoing  =  maxValue
+      end if
+      
+end subroutine most_influential_layer
+
 
 
 
@@ -2688,7 +2748,7 @@ end subroutine add_surface_fluxes
 !----------------------------------------------------------------------------------------------
 subroutine is_there_moist_convection(temperature, height, pressure, qhum, pblp,          &
                                      sensible   , latent, omega   , dt  , nlev, missing, &
-                                     pressure_deficit, t_updated, q_updated, pblp_updated )
+                                     pressure_deficit, t_updated, q_updated, pblp_updated, p_updated )
 
       integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
       real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
@@ -2703,38 +2763,41 @@ subroutine is_there_moist_convection(temperature, height, pressure, qhum, pblp, 
       real(8), intent(out)  ::  pressure_deficit       !*** a measure saturation at the top of PBL [Pa]
       real(8), intent(out)  ::  t_updated  (nlev)      !*** updated temperature profile [K]
       real(8), intent(out)  ::  q_updated  (nlev)      !*** updated specific humidity profile [kg/kg]
+      real(8), intent(out)  ::  p_updated  (nlev)      !*** updated pressure profile [Pa]
       real(8), intent(out)  ::  pblp_updated           !*** new pressure at the top of the boundary layer [Pa]
 
-      real(8)               ::  updated_qhum(nlev), updated_temp(nlev), updated_pblp
+      real(8)               ::  updated_qhum(nlev), updated_temp(nlev), updated_pblp, updated_p(nlev)
       real(8)               ::  tbm, tdef, bclp, qbcl
-      real(8)               ::  min_omega
+
+
+      !--------------------------------------------------------------------------------------
+      !----- New omega incorporation is to adjust the pressure levels by the omega profoile
+      !----------------------------------------------------------------------------------------
+      !call most_influential_layer( omega, updated_pblp, pressure, nlev, missing, strong_omega )
+      call updated_pressure_with_omega(omega, pressure, dt, nlev,  missing, updated_p)
 
 
       !-----------------------------------------------------------------------------
       !----- Updated the profiles of temperature and humidity after injecting
       !----- the surface senisble and latent heat fluxes
       !-----------------------------------------------------------------------------
-      call add_surface_fluxes (temperature, height, pressure, qhum, pblp, sensible, latent, dt, nlev, missing, &
+      call add_surface_fluxes (temperature, height, updated_p, qhum, pblp, sensible, latent, dt, nlev, missing, &
                                updated_temp, updated_qhum, updated_pblp )
 
       !-----------------------------------------------------------------------------
       !----- Calculate HCF variables in new system
       !-----------------------------------------------------------------------------
-      call hcfcalc ( nlev, missing, updated_temp, pressure, updated_qhum, height, pblp, tbm, tdef, bclp, qbcl )
+      call hcfcalc ( nlev, missing, updated_temp, updated_p, updated_qhum, height, pblp, tbm, tdef, bclp, qbcl )
 
-      !-----------------------------------------------------------------------------
-      !----- Calculate Maximum Omega Below PBL
-      !-----------------------------------------------------------------------------
-      call min_over_layer( omega, updated_pblp, pressure, nlev, missing, min_omega )
 
       !-----------------------------------------------------------------------------
       !----- Check for CI
       !-----------------------------------------------------------------------------
-      pressure_deficit  =  (updated_pblp + min_omega*dt) - bclp
+      pressure_deficit  =  updated_pblp - bclp
       t_updated         =  updated_temp
       q_updated         =  updated_qhum
       pblp_updated      =  updated_pblp
-
+      p_updated         =  updated_p
 
 end subroutine is_there_moist_convection
 
