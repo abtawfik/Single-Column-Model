@@ -465,6 +465,7 @@ def test_get_new_pbl_by_adding_sh():
     height          =  np.linspace(0,5,nlev) * 1e3
     temperature     =  np.zeros(nlev)
     pressure        =  np.zeros(nlev)
+    qhum            =  np.zeros(nlev)
     temperature[0]  =  300.0
     pressure[0]     =  100000.0
     for zz in range(1,nlev):
@@ -481,7 +482,7 @@ def test_get_new_pbl_by_adding_sh():
         theta                  =  300. + theta
         theta                  =  np.where( pressure >= pblp, theta, theta + 1.0 )
         temp                   =  calculate_temperature(theta,pressure,missing)
-        constructed_temp       =  get_new_pbl_by_adding_sh(temp,pressure,pblp,sensible,dt,missing)
+        constructed_temp       =  get_new_pbl_by_adding_sh(temp,pressure,qhum,pblp,sensible,dt,missing)
         initial_column_energy  =  column_energy( temp            , pressure, missing )
         new_column_energy      =  column_energy( constructed_temp, pressure, missing )
         absolute_error         =  (new_column_energy - initial_column_energy) - (sensible * dt)

@@ -52,7 +52,7 @@ subroutine Evaluate_CI( T    , Q    , P     , omega , itime                     
    real(8), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, theta, omega_pack
    real(8), dimension(nlev+1) ::  t_updated, q_updated, p_updated
    real(8)                    ::  pblp, pbl_theta, pblh, latent_heat, sensible_heat   
-   real(8)                    ::  pblp_updated, pressure_deficit, pw
+   real(8)                    ::  pblp_updated, theta_deficit, pw
    integer                    ::  xx, yy, dd, tt, ee
    integer                    ::  nlev1
 
@@ -129,19 +129,19 @@ subroutine Evaluate_CI( T    , Q    , P     , omega , itime                     
             call is_there_moist_convection(tpack, hpack, ppack, qpack, pblp,          &
                                            sensible_heat, latent_heat,                &
                                            omega_pack, dt, nlev1, missing, &
-                                           pressure_deficit, t_updated, q_updated, pblp_updated, p_updated )
+                                           theta_deficit, t_updated, q_updated, pblp_updated, p_updated )
 
             !-----------------------------------------------------------------------------
             !----- Output the desired variables when moist convective initiation occurs
             !----- Also exit the time of day loop if initiation occurs and begin a new day
             !----- This is because there is no "after initiation" results yet
             !-----------------------------------------------------------------------------
-            if( pressure_deficit.le.0 ) then
+            if( theta_deficit.le.0 ) then
 
 !               TBM     (dd,ee,yy,xx)  =  tbm_out
 !               BCLP    (dd,ee,yy,xx)  =  bclp_out
 !               QBCL    (dd,ee,yy,xx)  =  qbcl_out
-               call return_precipitable_water( q_updated, ppack, nlev, missing, pw )
+               call return_precipitable_water( q_updated, p_updated, nlev1, missing, pw )
                Pbl_depth         (dd,ee,yy,xx)  =  psfc(dd,yy,xx) - pblp_updated
                TimeOfCI          (dd,ee,yy,xx)  =  tt * 1.0
                Precipitable_Water(dd,ee,yy,xx)  =  pw
@@ -179,6 +179,200 @@ end subroutine Evaluate_CI
 
 
 
+!-----------------------------------------------------------------------------
+!
+! Primary Subroutine: At a high-level this subroutine takes real atmospheric
+! profiles and sees whether convection initiates under various evaporative 
+! fraction regimes.  This subroutine begins with an early morning sounding
+! and then evolves forward in time with a given net radiation that is split by 
+! the desired evaporative fraction.  Overall the subroutine can explore the entire
+! possible space of evaporative fraction for a given day to see whether CI occurred
+! - Is convection more likely over dry or 'wet' surface flux properties?
+! - Applying it spatially can give an answer to the question of positive or
+!   negative flux-CI feedbacks over certain regions and times of year
+!
+!-----------------------------------------------------------------------------
+subroutine Evaluate_CI_Land_Mask( T    , Q    , P     , omega , itime   , lmask           , &
+                                  t2m  , q2m  , psfc  , rnet  , ef      , dt    , nhr8    , &
+                                  nlev , nlat , nlon  , nhr   , nday    , num_EF, missing , &
+                                  Pbl_depth, TimeOfCI , Precipitable_water   )
+
+   implicit none
+!
+! Input/Output Variables
+!
+   integer, intent(in  )                                       ::  nday        ! *** # days
+   integer, intent(in  )                                       ::  nhr         ! *** # number of hours per day
+   integer, intent(in  )                                       ::  nhr8        ! *** # number of hours per day Original
+   integer, intent(in  )                                       ::  nlev        ! *** # of atmospheric levels
+   integer, intent(in  )                                       ::  nlat        ! *** # latitude
+   integer, intent(in  )                                       ::  nlon        ! *** # longitude
+   integer, intent(in  )                                       ::  num_EF      ! *** # number of evaporative fraction breakdowns 
+   integer, intent(in  )                                       ::  itime       ! *** Start time of morning sounding
+
+   real(8), intent(in  )                                       ::  missing     ! *** Missing values
+   real(8), intent(in  )                                       ::  dt          ! *** timestep in seconds [s/timestep]
+   real(8), intent(in  ), dimension(nday,nhr8,nlev,nlat,nlon)  ::  omega       ! *** vertical velocity [Pa/s]
+   real(8), intent(in  ), dimension(nday     ,nlev,nlat,nlon)  ::  T  , Q      ! *** Temp and Humidity over level in SI
+   real(8), intent(in  ), dimension(nday          ,nlat,nlon)  ::  t2m, q2m    ! *** 2-m temp and humidity, Height in SI
+
+   real(8), intent(in  ), dimension(               nlat,nlon)  ::  lmask       ! *** Land Mask but could be any mask
+
+   real(8), intent(in  ), dimension(          nlev          )  ::  P           ! *** Pressure in (level) SI
+   real(8), intent(in  ), dimension(nday          ,nlat,nlon)  ::  psfc        ! *** 2-m pressure and height in SI
+   real(8), intent(in  ), dimension(nday,nhr      ,nlat,nlon)  ::  rnet        ! *** Net Radiation time series [W/m2]
+   real(8), intent(in  ), dimension(     num_EF             )  ::  ef          ! *** Evaporative Fraction levels
+
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  TimeOfCI    ! *** Time of day of CI [0-24 hour]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  Pbl_depth   ! *** PBL Depth at time of CI [Pa]
+   real(8), intent(out ), dimension(nday,num_EF   ,nlat,nlon)  ::  Precipitable_water   ! *** Precipitable Water at time of CI [kg/m2]
+
+
+!
+! Local variables
+!
+   real(8), dimension(nlev+1) ::  ppack, tpack, hpack, qpack, theta, omega_pack
+   real(8), dimension(nlev+1) ::  t_updated, q_updated, p_updated, h_updated
+   real(8)                    ::  pblp, pbl_theta, pblh, latent_heat, sensible_heat   
+   real(8)                    ::  pblp_updated, theta_deficit, pw
+   integer                    ::  xx, yy, dd, tt, ee
+   integer                    ::  nlev1
+
+
+
+!-----------------------------------------------------------------------------
+
+
+      !-----------------------------------------------------------------------------
+      !-- Initialize output variables
+      !-----------------------------------------------------------------------------
+      TimeOfCI            =  missing
+      Precipitable_water  =  missing
+      Pbl_depth           =  missing
+      nlev1               =  nlev + 1
+
+      !-----------------------------------------------------------------------------
+      !-- Loop over time, lat, and lon
+      !-----------------------------------------------------------------------------
+      lati_loop: do yy = 1,nlat 
+      long_loop: do xx = 1,nlon
+         if( lmask(yy,xx).eq.0 ) cycle
+         ef_loop:   do ee = 1,num_EF
+         day_loop:  do dd = 1,nday
+
+            !--------------------------------------
+            !-- Append 2-m quantiy to the profile 
+            !--------------------------------------
+            call packIt(T    (dd,:,yy,xx), t2m(dd  ,yy,xx) , nlev   , nlev1, &
+                        psfc (dd  ,yy,xx), P               , missing, tpack  )
+
+            call packIt(Q    (dd,:,yy,xx), q2m(dd  ,yy,xx) , nlev   , nlev1, &
+                        psfc (dd  ,yy,xx), P               , missing, qpack  )
+            
+            call packIt(P                , psfc(dd  ,yy,xx), nlev   , nlev1, &
+                        psfc (dd  ,yy,xx), P               , missing, ppack  )
+
+            !-----------------------------------------------------------------------------
+            !-- Get initial boundary layer height, pressure, and temperature
+            !-----------------------------------------------------------------------------
+            call theta_with_surface_reference( tpack, ppack, nlev1, missing, theta)
+            call pbl_gradient                ( nlev1,  missing, theta, ppack, hpack, pblp, pbl_theta, pblh )
+
+            !-----------------------------------------------------------------------------
+            !-- Calculate the height above ground [m]
+            !-----------------------------------------------------------------------------
+            call calculate_height_above_ground (tpack, ppack, nlev1, missing, hpack)
+
+            !-----------------------------------------------------------------------------
+            !-- Loop over time of day until Initiation occurs
+            !-- Running a little mini-simulation!!!!!  
+            !-----------------------------------------------------------------------------
+            time_of_day: do tt = itime,nhr
+
+               !-----------------------------------------------------------------------------
+               !-- Don't do anything if there is no heat or moisture being added
+               !-- Otherwise partition the evaporative fraction between LH and SH
+               !-----------------------------------------------------------------------------
+               if( rnet(dd,tt,yy,xx).le.0 ) cycle time_of_day
+               latent_heat    =  ef(ee)         * rnet(dd,tt,yy,xx)
+               sensible_heat  =  (1.0 - ef(ee)) * rnet(dd,tt,yy,xx)
+
+               !-----------------------------------------------------------------------------
+               !-- Pack the omega variable to be same dimension as T,p,q, and h
+               !-- Need to put this variable within the time loop to ensure that
+               !-- omega varies throughout the day
+               !-- Update the pressure field using the omega [Pa/s]
+               !-----------------------------------------------------------------------------
+               call packIt(omega(dd,(tt/18)+1,:,yy,xx) , 0.0 , nlev   , nlev1      , &
+                           psfc (dd            ,yy,xx) , P   , missing, omega_pack   )
+
+               !-----------------------------------------------------------------------------
+               !-- Check if there is moist convection when applying the surface fluxes
+               !-----------------------------------------------------------------------------
+               call is_there_moist_convection(tpack, hpack, ppack, qpack, pblp,          &
+                                              sensible_heat, latent_heat,                &
+                                              omega_pack, dt, nlev1, missing, &
+                                              theta_deficit, t_updated, q_updated, pblp_updated, p_updated )
+
+               !-----------------------------------------------------------------------------
+               !-- Calculate the height above ground [m]
+               !-----------------------------------------------------------------------------
+               call calculate_height_above_ground (t_updated, p_updated, nlev1, missing, h_updated)
+
+               !-----------------------------------------------------------------------------
+               !----- Output the desired variables when moist convective initiation occurs
+               !----- Also exit the time of day loop if initiation occurs and begin a new day
+               !----- This is because there is no "after initiation" results yet
+               !-----------------------------------------------------------------------------
+               if( theta_deficit.le.0 ) then
+
+!               TBM     (dd,ee,yy,xx)  =  tbm_out
+!               BCLP    (dd,ee,yy,xx)  =  bclp_out
+!               QBCL    (dd,ee,yy,xx)  =  qbcl_out
+                  call return_precipitable_water( q_updated, p_updated, nlev1, missing, pw )
+                  Pbl_depth         (dd,ee,yy,xx)  =  psfc(dd,yy,xx) - pblp_updated
+                  TimeOfCI          (dd,ee,yy,xx)  =  tt * 1.0
+                  Precipitable_Water(dd,ee,yy,xx)  =  pw
+                  exit time_of_day
+               end if
+
+               !-----------------------------------------------------------------------------
+               !----- Here is the fun mutable part:  Update the temperature and humidity profiles
+               !-----------------------------------------------------------------------------
+               tpack  =  t_updated
+               qpack  =  q_updated
+               ppack  =  p_updated
+               hpack  =  h_updated
+               pblp   =  pblp_updated
+
+            end do time_of_day
+
+         end do day_loop
+         end do ef_loop
+      end do long_loop
+      end do lati_loop
+
+
+
+end subroutine Evaluate_CI_Land_Mask
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -189,12 +383,13 @@ end subroutine Evaluate_CI
 ! function: Get the new temperature profile after adding surface sensible heat flux
 !
 !----------------------------------------------------------------------------------------------
-subroutine get_new_pbl_by_adding_sh (temperature, pressure, pblp, sensible_heat, dt, nlev, missing, &
+subroutine get_new_pbl_by_adding_sh (temperature, pressure, qhum, pblp, sensible_heat, dt, nlev, missing, &
                                      updated_temperature)
 
       integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
       real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
       real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  qhum       (nlev)      !*** specific humidity profile [kg/kg]
       real(8), intent(in )  ::  pblp                   !*** pressure at top of pbl [Pa]
       real(8), intent(in )  ::  sensible_heat          !*** surface sensible heat flux [W/m2]
       real(8), intent(in )  ::  dt                     !*** model timestep in seconds [s]
@@ -204,7 +399,7 @@ subroutine get_new_pbl_by_adding_sh (temperature, pressure, pblp, sensible_heat,
 
       integer               ::  ipbl
       real(8)               ::  pbl_energy, new_pbl_energy
-      real(8)               ::  theta_pbl
+      real(8)               ::  theta_pbl, theta_virtual_pbl
       real(8)               ::  new_temperature(nlev)
 
       !-----------------------------------------------------------------------------
@@ -233,10 +428,17 @@ subroutine get_new_pbl_by_adding_sh (temperature, pressure, pblp, sensible_heat,
       call get_pbl_theta_using_energy( pressure, new_pbl_energy, ipbl, nlev, missing, theta_pbl )
 
       !-----------------------------------------------------------------------------
+      !-- Calculate the virtual potential temperature of the PBL
+      !-- This is used a humidity adjusted value to discover the new height of the 
+      !-- of the PBL (essentially including the buoyancy effects of water vapor)
+      !-----------------------------------------------------------------------------
+      call virtualTemperature1D(theta_pbl, qhum(ipbl-1), missing, theta_virtual_pbl)
+      
+      !-----------------------------------------------------------------------------
       !-- Find new pbl intersection point using the updated theta_pbl
       !-- Return new temperature profile and new pbl pressure
       !-----------------------------------------------------------------------------
-      call get_new_temp_profile      ( temperature, pressure, theta_pbl, sensible_heat, dt, nlev, missing, &
+      call get_new_temp_profile      ( temperature, pressure, theta_virtual_pbl, sensible_heat, dt, nlev, missing, &
                                        new_temperature )
       updated_temperature  =  new_temperature
 
@@ -294,6 +496,43 @@ end subroutine updated_pressure_with_omega
 
 
 
+!----------------------------------------------------------------------------------------------
+!
+! function: Add tracer to the column -- can be moisture, temperature, whatever really so long as
+!           the units are Stuff/second
+!
+!----------------------------------------------------------------------------------------------
+subroutine advect_tracer_and_update_profile(tracer, advection, dt, nlev,  missing, new_tracer)
+
+      integer, intent(in )  ::  nlev                !*** # of atmospheric levels
+      real(8), intent(in )  ::  tracer   (nlev)     !*** Concentration [Stuff]
+      real(8), intent(in )  ::  advection(nlev)     !*** Rate of advection [Stuff/s]
+      real(8), intent(in )  ::  dt                  !*** time step [s]
+      real(8), intent(in )  ::  missing             !*** missing values
+      real(8), intent(out)  ::  new_tracer(nlev)  !*** updated tracer [Stuff]
+      integer               ::  zz
+
+      new_tracer  =  tracer
+      where( tracer.ne.missing  .and.  advection.ne.missing )
+         new_tracer  =  tracer + (dt * advection)
+      end where
+
+      !!! ADD AN ERROR CHECK !!!
+      if( any(new_tracer.le.0) ) then
+         write(*,*) " FORTRAN ERROR:  TRACER IS NEGATIVE - Check advection"
+         do zz = 1,nlev
+            write(*,*) "new tracer:  ",new_tracer,"   incoming tracer:  ",tracer
+         end do
+         stop
+      end if
+
+end subroutine advect_tracer_and_update_profile
+
+
+
+
+
+
 
 !-----------------------------------------------------------------------------
 !
@@ -310,7 +549,7 @@ subroutine get_new_temp_profile( temperature, pressure, theta_pbl, sensible, dt,
       integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
       real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
       real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
-      real(8), intent(in )  ::  theta_pbl              !*** average potential temp of PBL [K]
+      real(8), intent(in )  ::  theta_pbl              !*** average VIRTUAL potential temp of PBL [K]
       real(8), intent(in )  ::  dt                     !*** model timestep [s]
       real(8), intent(in )  ::  sensible               !*** surface sensible heat flux [W/m2]
       real(8), intent(in )  ::  missing                !*** missing values
@@ -337,10 +576,7 @@ subroutine get_new_temp_profile( temperature, pressure, theta_pbl, sensible, dt,
       call maxIndex(nlev , 1, (theta.ne.missing .and. theta_pbl.ge.theta), imixed )
       mixed_theta   = theta
       if( imixed.le.1 ) imixed = 2
-!         mixed_theta(1) = theta_pbl
-!         call temp_from_theta_with_surface_reference(mixed_theta, pressure, nlev, missing, new_temperature)
-!         return
-!      end if
+
 
       !-----------------------------------------------------------------------------
       !-- Prescribe the new theta (the one that includes sensible heating) to all levels
@@ -459,6 +695,32 @@ subroutine return_pbl_energy(temperature, pressure, pblp, nlev, missing, pbl_ene
       call column_energy (temperature(:ipbl), pressure(:ipbl), size(pressure(:ipbl)), missing, pbl_energy )
 
 end subroutine return_pbl_energy
+
+
+
+
+
+
+
+!-----------------------------------------------------------------------------
+!
+!  function: Return indices where the PBL is -> check if pbl is within first layer
+!            if so then assure that the index selects the 2nd layer to avoid integration
+!            over nothing and returning a pbl_energy = 0; Note this will "mix" the 1st
+!            layer automatically
+!
+!-----------------------------------------------------------------------------
+subroutine return_pbl_index(pressure, pblp, nlev, missing, ipbl)
+      integer, intent(in )  ::  nlev                 !*** # of atmospheric levels
+      real(8), intent(in )  ::  pressure   (nlev)    !*** pressure profile [K]
+      real(8), intent(in )  ::  pblp                 !*** pressure at top of pbl [Pa]
+      real(8), intent(in )  ::  missing              !*** missing values
+      integer, intent(out)  ::  ipbl                 !*** upper index of integration
+
+      call maxIndex      (nlev , 1, (pressure.ne.missing .and. pressure.ge.pblp), ipbl )
+      if( ipbl.le.1 ) ipbl = 2
+
+end subroutine return_pbl_index
 
 
 
@@ -1055,60 +1317,9 @@ end subroutine totaldensity
 
 
 
-!---------------------------------------------------------------------------------
-!
-! function: Returns the air pressure using the ideal gas law
-!
-!---------------------------------------------------------------------------------
-subroutine idealGas_P (temp, density, mixQ, nsize, nlev, missing, pressure )
-
-      integer, intent(in )  ::  nsize, nlev
-      real(8), intent(in )  ::  temp   (nlev,nsize)
-      real(8), intent(in )  ::  density(nlev,nsize), mixQ(nlev,nsize)
-      real(8), intent(in )  ::  missing
-      real(8), intent(out)  ::  pressure(nlev,nsize)
-      real(8), parameter    ::  Rd=287.04
-      real(8)               ::  Tvirt(nlev,nsize)
-
-      pressure  =  missing
-      Tvirt     =  missing
-      call virtualTemp(temp, mixQ, nsize, nlev, missing, Tvirt)
-      where( temp .ne.missing  .and.  density.ne.missing  .and.  &
-             Tvirt.ne.missing  .and.  density.ne.0               )
-          pressure = Rd * Tvirt * density
-      endwhere
-
-end subroutine idealGas_P
-
-
-
-
-
-
 
 !---------------------------------------------------------------------------------
-! function: Calculates virtual temperature
-!---------------------------------------------------------------------------------
-subroutine virtualTemp(temp, qhum, nsize, nlev, missing, Tvirt)
-     integer, intent(in )  ::  nlev, nsize
-     real(8), intent(in )  ::  temp (nlev,nsize)
-     real(8), intent(in )  ::  qhum (nlev,nsize)
-     real(8), intent(in )  ::  missing
-     real(8), intent(out)  ::  Tvirt(nlev,nsize)
- 
-     Tvirt  =  missing
-     where( temp.ne.missing  .and.  qhum.ne.missing )
-            Tvirt  =  temp * (1 + 0.61 * qhum)
-     endwhere
-end subroutine virtualTemp
-
-
-
-
-
-
-!---------------------------------------------------------------------------------
-!         cpv    = 
+!      
 !   Calculate latent heat of condensation as a temperature dependent variable
 !
 !---------------------------------------------------------------------------------
@@ -1495,6 +1706,25 @@ end subroutine virtualPotentialTemp
 
 
 
+
+!---------------------------------------------------------------------------------
+! function: Calculates virtual temperature
+!---------------------------------------------------------------------------------
+subroutine virtualTemperature1D(temp, qhum, missing, Tvirt)
+     real(8), intent(in )  ::  temp  
+     real(8), intent(in )  ::  qhum  
+     real(8), intent(in )  ::  missing
+     real(8), intent(out)  ::  Tvirt
+ 
+     Tvirt  =  missing
+     if( temp.ne.missing  .and.  qhum.ne.missing ) then
+        Tvirt  =  temp * (1 + 0.61 * qhum)
+     end if
+end subroutine virtualTemperature1D
+
+
+
+
 !---------------------------------------------------------------------------------
 ! function: Calculates virtual temperature
 !---------------------------------------------------------------------------------
@@ -1741,6 +1971,95 @@ subroutine column_energy_levels (temperature, pressure, nlev, missing, internal_
       endwhere
 
 end subroutine column_energy_levels
+
+
+
+
+!-----------------------------------------------------------------------------
+! function: Calculates relative humidity [%]
+!-----------------------------------------------------------------------------
+subroutine relativeHumidity( t, p, q, missing, relh )
+!      integer, intent(in ) :: nlev
+!      real(8), intent(in ) :: t(nlev)
+!      real(8), intent(in ) :: p(nlev)
+!      real(8), intent(in ) :: q(nlev)
+!      real(8), intent(in ) :: missing
+!      real(8), intent(out) :: relh(nlev)
+!
+!      real(8)              :: qsat(nlev)
+!
+!      relh  =  missing
+!      call saturationHumidity( t, p, nlev, missing, qsat )
+!      where( qsat.ne.missing  .and.  q.ne.missing  .and. qsat.ne.0 )
+!         relh = q/qsat * 1e2
+!      endwhere
+
+
+      real(8), intent(in ) :: t
+      real(8), intent(in ) :: p
+      real(8), intent(in ) :: q
+      real(8), intent(in ) :: missing
+      real(8), intent(out) :: relh
+
+      real(8)              :: qsat
+
+      relh  =  missing
+      call saturationHumidity1d( t, p, missing, qsat )
+      if( qsat.ne.missing  .and.  q.ne.missing  .and. qsat.ne.0 ) then
+         relh = q/qsat * 1e2
+      end if
+
+end subroutine relativeHumidity
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Just as the name suggests it returns the relative humidity at the top of the PBL
+!    It does so by first finding the index of the PBL and then calculating the RH at that level
+!
+!----------------------------------------------------------------------------------------------
+subroutine relativeHumidity_at_pbl(temperature, pressure, qhum, pblp, nlev, missing, relh_at_pbl )
+
+      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  qhum       (nlev)      !*** specific humidity profile [kg/kg]
+      real(8), intent(in )  ::  pblp                   !*** pressure at the top of the boundary layer [Pa]
+      real(8), intent(in )  ::  missing                !*** missing values
+      real(8), intent(out)  ::  relh_at_pbl            !*** relative humidity at the top of the PBL [%]
+
+      relh_at_pbl  =  missing
+      call return_pbl_index( pressure, pblp, nlev, missing, ipbl)
+      call relativeHumidity( temperature(ipbl), pressure(ipbl), qhum(ipbl), missing, relh_at_pbl )
+
+end subroutine relativeHumidity_at_pbl
+
+
+
+
+!-----------------------------------------------------------------------------
+! function: Calculate saturation specific humidity [kg/kg] for single values
+!-----------------------------------------------------------------------------
+subroutine saturationHumidity1d( t, p, missing, qsat )
+      real(8), intent(in ) :: t
+      real(8), intent(in ) :: p
+      real(8), intent(in ) :: missing
+      real(8), intent(out) :: qsat
+
+      real(8), parameter   ::  by100 = 1e2
+      real(8), parameter   ::  t0=273.15, ep=0.622, es0=6.11, a=17.269, b=35.86
+      real(8), parameter   ::  onemep=1.0 - ep
+
+      qsat  =  missing
+      if( t.ne.missing .and. p.ne.missing ) then
+         qsat  =  by100*0.01 *(ep* (es0*exp((a*( t-t0))/( t-b))) ) /  &
+                   ((p/1e2)-onemep*(es0*exp((a*( t-t0))/( t-b))))
+      end if
+      if( qsat.ne.missing ) qsat  =  qsat/(1.+qsat)
+
+end subroutine saturationHumidity1d
 
 
 
@@ -2724,7 +3043,7 @@ subroutine add_surface_fluxes (temperature, height, pressure, qhum, pblp, sensib
 
       real(8)               ::  theta(nlev), new_pbl_theta, new_pblh, evapotrans
 
-      call get_new_pbl_by_adding_sh    (     temperature, pressure, pblp, sensible, dt, nlev, missing, new_temperature)
+      call get_new_pbl_by_adding_sh    ( temperature, pressure, qhum, pblp, sensible, dt, nlev, missing, new_temperature)
       call theta_with_surface_reference( new_temperature, pressure, nlev, missing, theta)
       call pbl_gradient                ( nlev ,  missing, theta, pressure, height, new_pblp, new_pbl_theta, new_pblh )
       call latent_heat_to_evapotrans   ( new_temperature(1), latent, dt, missing, evapotrans)
@@ -2748,7 +3067,7 @@ end subroutine add_surface_fluxes
 !----------------------------------------------------------------------------------------------
 subroutine is_there_moist_convection(temperature, height, pressure, qhum, pblp,          &
                                      sensible   , latent, omega   , dt  , nlev, missing, &
-                                     pressure_deficit, t_updated, q_updated, pblp_updated, p_updated )
+                                     theta_deficit, t_updated, q_updated, pblp_updated, p_updated )
 
       integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
       real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
@@ -2760,7 +3079,7 @@ subroutine is_there_moist_convection(temperature, height, pressure, qhum, pblp, 
       real(8), intent(in )  ::  dt                     !*** model time step in seconds [s]
       real(8), intent(in )  ::  omega      (nlev)      !*** pressure velocity within PBL [Pa/s]
       real(8), intent(in )  ::  missing                !*** missing values
-      real(8), intent(out)  ::  pressure_deficit       !*** a measure saturation at the top of PBL [Pa]
+      real(8), intent(out)  ::  theta_deficit          !*** a measure saturation at the top of PBL [K]
       real(8), intent(out)  ::  t_updated  (nlev)      !*** updated temperature profile [K]
       real(8), intent(out)  ::  q_updated  (nlev)      !*** updated specific humidity profile [kg/kg]
       real(8), intent(out)  ::  p_updated  (nlev)      !*** updated pressure profile [Pa]
@@ -2773,7 +3092,6 @@ subroutine is_there_moist_convection(temperature, height, pressure, qhum, pblp, 
       !--------------------------------------------------------------------------------------
       !----- New omega incorporation is to adjust the pressure levels by the omega profoile
       !----------------------------------------------------------------------------------------
-      !call most_influential_layer( omega, updated_pblp, pressure, nlev, missing, strong_omega )
       call updated_pressure_with_omega(omega, pressure, dt, nlev,  missing, updated_p)
 
 
@@ -2791,9 +3109,12 @@ subroutine is_there_moist_convection(temperature, height, pressure, qhum, pblp, 
 
 
       !-----------------------------------------------------------------------------
-      !----- Check for CI
+      !----- Update the profile variables and return the saturation deficit
+      !----- This saturation deficit is what determines whether or not CI occured
+      !-----             WHY NOT JUST USED RELATIVE HUMIDITY YOU DUFUS
       !-----------------------------------------------------------------------------
-      pressure_deficit  =  updated_pblp - bclp
+      !pressure_deficit  =  updated_pblp - bclp
+      theta_deficit     =  tdef
       t_updated         =  updated_temp
       q_updated         =  updated_qhum
       pblp_updated      =  updated_pblp
@@ -2803,3 +3124,166 @@ end subroutine is_there_moist_convection
 
 
 
+
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Advance the single column model in time -- Basically just add the latent and sensible
+!           heat fluxes to the column and update the temperature, humidity, and pressure profiles
+!
+!           This function accounts for the omega (pressure velocity) adjustment of the pressure
+!           profile to account for large-scale ascent.  
+!           IT CURRENTLY DOES NOT INCLUDE HORIZONTAL ADVECTION THAT IS IS ANOTHER SUBROUTINE:
+!           advance_with_advection
+!
+!
+!----------------------------------------------------------------------------------------------
+subroutine advance_column_model(temperature, height, pressure, qhum, pblp,          &
+                                sensible   , latent, omega   , dt  , nlev, missing, &
+                                t_updated, q_updated, pblp_updated, p_updated, trigger )
+
+      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  qhum       (nlev)      !*** specific humidity profile [kg/kg]
+      real(8), intent(in )  ::  height     (nlev)      !*** height above ground profile [m]
+      real(8), intent(in )  ::  sensible, latent       !*** surface sensible and latent heat flux [W/m2]
+      real(8), intent(in )  ::  pblp                   !*** pressure at the top of the boundary layer [Pa]
+      real(8), intent(in )  ::  dt                     !*** model time step in seconds [s]
+      real(8), intent(in )  ::  omega      (nlev)      !*** pressure velocity within PBL [Pa/s]
+      real(8), intent(in )  ::  missing                !*** missing values
+      real(8), intent(out)  ::  t_updated  (nlev)      !*** updated temperature profile [K]
+      real(8), intent(out)  ::  q_updated  (nlev)      !*** updated specific humidity profile [kg/kg]
+      real(8), intent(out)  ::  p_updated  (nlev)      !*** updated pressure profile [Pa]
+      real(8), intent(out)  ::  pblp_updated           !*** new pressure at the top of the boundary layer [Pa]
+      real(8), intent(out)  ::  trigger                !*** Identify if moisture convection has occured 0=No CI 1=Yes CI
+
+      real(8)               ::  updated_qhum(nlev), updated_temp(nlev), updated_pblp, updated_p(nlev)
+      real(8)               ::  relh_at_pbl
+
+
+      !--------------------------------------------------------------------------------------
+      !----- New omega incorporation is to adjust the pressure levels by the omega profoile
+      !----------------------------------------------------------------------------------------
+      call updated_pressure_with_omega(omega, pressure, dt, nlev,  missing, updated_p)
+
+
+      !-----------------------------------------------------------------------------
+      !----- Updated the profiles of temperature and humidity after injecting
+      !----- the surface senisble and latent heat fluxes
+      !-----------------------------------------------------------------------------
+      call add_surface_fluxes (temperature, height, updated_p, qhum, pblp, sensible, latent, dt, nlev, missing, &
+                               updated_temp, updated_qhum, updated_pblp )
+
+      !-----------------------------------------------------------------------------
+      !----- Calculate Relative Humidity at the top of the PBL
+      !-----------------------------------------------------------------------------
+      call relativeHumidity_at_pbl( updated_temp, updated_p, updated_qhum, updated_pblp, nlev, missing, relh_at_pbl )
+
+      !-----------------------------------------------------------------------------
+      !----- Update the profile variables and return the saturation deficit
+      !----- This saturation deficit is what determines whether or not CI occured
+      !-----------------------------------------------------------------------------
+      if( relh_at_pbl.ge.99 ) then
+         trigger = 1.
+      else
+         trigger = 0.
+      end if
+      t_updated         =  updated_temp
+      q_updated         =  updated_qhum
+      pblp_updated      =  updated_pblp
+      p_updated         =  updated_p
+
+end subroutine advance_column_model
+
+
+
+
+
+
+
+
+
+
+!----------------------------------------------------------------------------------------------
+!
+! function: Advance the single column model in time -- Basically just add the latent and sensible
+!           heat fluxes to the column and update the temperature, humidity, and pressure profiles
+!
+!           This function accounts for:
+!           1) Omega (pressure velocity) adjustment of the pressure to account for large-scale ascent.  
+!           2) Lateral advection of moisture and temperature
+!
+!
+!----------------------------------------------------------------------------------------------
+subroutine advance_with_advection(temperature, height, pressure, qhum       , pblp       , &
+                                  sensible   , latent, omega   , t_advection, q_advection, &
+                                  dt         , nlev  , missing ,                           &
+                                  t_updated  , q_updated, pblp_updated, p_updated, trigger )
+
+      integer, intent(in )  ::  nlev                   !*** # of atmospheric levels
+      real(8), intent(in )  ::  temperature(nlev)      !*** temperature profile [K]
+      real(8), intent(in )  ::  pressure   (nlev)      !*** pressure profile [Pa]
+      real(8), intent(in )  ::  qhum       (nlev)      !*** specific humidity profile [kg/kg]
+      real(8), intent(in )  ::  height     (nlev)      !*** height above ground profile [m]
+      real(8), intent(in )  ::  t_advection(nlev)      !*** temperature tendency due to lateral advection [K/s]
+      real(8), intent(in )  ::  q_advection(nlev)      !*** specific humidity due to lateral advection [kg/kg/s]
+      real(8), intent(in )  ::  sensible, latent       !*** surface sensible and latent heat flux [W/m2]
+      real(8), intent(in )  ::  pblp                   !*** pressure at the top of the boundary layer [Pa]
+      real(8), intent(in )  ::  dt                     !*** model time step in seconds [s]
+      real(8), intent(in )  ::  omega      (nlev)      !*** pressure velocity within PBL [Pa/s]
+      real(8), intent(in )  ::  missing                !*** missing values
+      real(8), intent(out)  ::  t_updated  (nlev)      !*** updated temperature profile [K]
+      real(8), intent(out)  ::  q_updated  (nlev)      !*** updated specific humidity profile [kg/kg]
+      real(8), intent(out)  ::  p_updated  (nlev)      !*** updated pressure profile [Pa]
+      real(8), intent(out)  ::  pblp_updated           !*** new pressure at the top of the boundary layer [Pa]
+      real(8), intent(out)  ::  trigger                !*** Identify if moisture convection has occured 0=No CI 1=Yes CI
+
+      real(8)               ::  updated_qhum(nlev), updated_temp(nlev), updated_pblp, updated_p(nlev)
+      real(8)               ::  relh_at_pbl, temp_with_adv(nlev), qhum_with_adv(nlev)
+
+
+      !----------------------------------------------------------------------------------------
+      !----- New omega incorporation is to adjust the pressure levels by the omega profoile
+      !----------------------------------------------------------------------------------------
+      call updated_pressure_with_omega(omega, pressure, dt, nlev,  missing, updated_p)
+
+
+      !----------------------------------------------------------------------------------------
+      !----- Update Temperature and Humidity profiles with advection prior to surface fluxes
+      !----------------------------------------------------------------------------------------
+      call advect_tracer_and_update_profile(temperature, t_advection, dt, nlev,  missing, temp_with_adv)
+      call advect_tracer_and_update_profile(qhum       , q_advection, dt, nlev,  missing, qhum_with_adv)
+
+
+      !-----------------------------------------------------------------------------
+      !----- Updated the profiles of temperature and humidity after injecting
+      !----- the surface senisble and latent heat fluxes
+      !-----------------------------------------------------------------------------
+      call add_surface_fluxes (temp_with_adv, height      , updated_p, qhum_with_adv, &
+                               pblp         , sensible    , latent   , dt, nlev, missing, &
+                               updated_temp , updated_qhum, updated_pblp )
+
+      !-----------------------------------------------------------------------------
+      !----- Calculate Relative Humidity at the top of the PBL
+      !-----------------------------------------------------------------------------
+      call relativeHumidity_at_pbl( updated_temp, updated_p, updated_qhum, updated_pblp, nlev, missing, relh_at_pbl )
+
+      !-----------------------------------------------------------------------------
+      !----- Update the profile variables and return the saturation deficit
+      !----- This saturation deficit is what determines whether or not CI occured
+      !-----------------------------------------------------------------------------
+      if( relh_at_pbl.ge.99 ) then
+         trigger = 1.
+      else
+         trigger = 0.
+      end if
+      t_updated         =  updated_temp
+      q_updated         =  updated_qhum
+      pblp_updated      =  updated_pblp
+      p_updated         =  updated_p
+
+end subroutine advance_with_advection
